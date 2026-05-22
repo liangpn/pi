@@ -1,0 +1,14 @@
+{
+  "provider": "rpc-demo",
+  "baseUrl": "http://127.0.0.1:9111/v1",
+  "api": "openai-completions",
+  "apiKeyEnv": "OPENAI_API_KEY",
+  "models": [
+    "your-local-model-id"
+  ],
+  "selectedModel": "your-local-model-id",
+  "compat": {
+    "supportsDeveloperRole": false,
+    "supportsReasoningEffort": false
+  }
+}

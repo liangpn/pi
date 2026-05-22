@@ -1,0 +1,64 @@
+{
+  "servers": {
+    "caseTools": {
+      "transport": "streamable-http",
+      "url": "http://127.0.0.1:9001/mcp",
+      "headers": {}
+    }
+  },
+  "tools": [
+    {
+      "name": "jcj-get-case-detail",
+      "server": "caseTools",
+      "mcpTool": "jcj-get-case-detail",
+      "description": "Get case detail from the configured MCP server",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "caseId": { "type": "string" }
+        },
+        "required": ["caseId"]
+      }
+    },
+    {
+      "name": "panel-operate",
+      "server": "caseTools",
+      "mcpTool": "panel-operate",
+      "description": "Operate the case handling panel",
+      "parameters": {
+        "type": "object",
+        "additionalProperties": true
+      }
+    },
+    {
+      "name": "background-check",
+      "server": "caseTools",
+      "mcpTool": "background-check",
+      "description": "Run background checks through MCP",
+      "parameters": {
+        "type": "object",
+        "additionalProperties": true
+      }
+    },
+    {
+      "name": "getPrettyPlanInstance",
+      "server": "caseTools",
+      "mcpTool": "getPrettyPlanInstance",
+      "description": "Fetch a formatted plan instance",
+      "parameters": {
+        "type": "object",
+        "additionalProperties": true
+      }
+    },
+    {
+      "name": "device-operate",
+      "server": "caseTools",
+      "mcpTool": "device-operate",
+      "description": "Operate devices through MCP",
+      "parameters": {
+        "type": "object",
+        "additionalProperties": true
+      }
+    }
+  ]
+}

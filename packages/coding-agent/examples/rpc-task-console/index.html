@@ -1,0 +1,1515 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>公安指挥任务控制台</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        --bg: #08111f;
+        --bg-2: #0b1526;
+        --panel: #101f34;
+        --panel-2: #13243a;
+        --panel-3: #102033;
+        --line: #2e415c;
+        --line-soft: #1e3047;
+        --text: #f3f7fb;
+        --soft: #c7d2df;
+        --muted: #8192a8;
+        --blue: #4ea5ff;
+        --green: #36c275;
+        --red: #ff5a5f;
+        --amber: #e9a63a;
+        --neutral: #8da1ba;
+        --focus: #9ed0ff;
+        --side-width: 380px;
+        --topbar-height: 58px;
+        --card-height: 360px;
+        --radius: 8px;
+        --shadow: 0 18px 60px rgba(0, 0, 0, 0.35);
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      html,
+      body {
+        margin: 0;
+        width: 100%;
+        height: 100%;
+      }
+
+      body {
+        height: 100dvh;
+        overflow: hidden;
+        background: var(--bg);
+        color: var(--text);
+        font-family:
+          Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        letter-spacing: 0;
+      }
+
+      button,
+      input,
+      textarea {
+        font: inherit;
+      }
+
+      button:focus-visible,
+      input:focus-visible,
+      textarea:focus-visible {
+        outline: 3px solid var(--focus);
+        outline-offset: 2px;
+      }
+
+      button {
+        cursor: pointer;
+      }
+
+      h1,
+      h2,
+      h3,
+      p {
+        margin: 0;
+      }
+
+      .app {
+        display: grid;
+        grid-template-rows: var(--topbar-height) minmax(0, 1fr);
+        height: 100dvh;
+        overflow: hidden;
+        background:
+          linear-gradient(180deg, rgba(31, 64, 103, 0.22), transparent 260px),
+          var(--bg);
+      }
+
+      .topbar {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 18px;
+        border-bottom: 1px solid var(--line);
+        padding: 0 16px;
+        background: #07101d;
+      }
+
+      .brand {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        min-width: 0;
+      }
+
+      .mark {
+        display: grid;
+        place-items: center;
+        width: 34px;
+        height: 34px;
+        border: 1px solid #315477;
+        border-radius: 8px;
+        background: #0d1e33;
+        color: #b9dcff;
+        font-size: 13px;
+        font-weight: 800;
+      }
+
+      .brand h1 {
+        font-size: 16px;
+        line-height: 1.2;
+      }
+
+      .top-actions {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        min-width: 0;
+      }
+
+      .btn {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        min-height: 36px;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        padding: 0 12px;
+        background: #102033;
+        color: var(--soft);
+        font-size: 13px;
+        font-weight: 700;
+        white-space: nowrap;
+      }
+
+      .btn:hover {
+        border-color: #426386;
+        background: #152941;
+      }
+
+      .btn.primary {
+        border-color: #2f71bd;
+        background: #185a9d;
+        color: #fff;
+      }
+
+      .btn.stop {
+        border-color: #9d3437;
+        background: #8d2529;
+        color: #fff;
+      }
+
+      .btn.icon {
+        width: 36px;
+        padding: 0;
+      }
+
+      .workspace {
+        position: relative;
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) var(--side-width);
+        min-height: 0;
+        overflow: hidden;
+        transition: grid-template-columns 220ms ease;
+      }
+
+      body.control-collapsed {
+        --side-width: 0px;
+      }
+
+      .side-panel {
+        display: grid;
+        grid-column: 2;
+        grid-row: 1;
+        grid-template-rows: minmax(0, 1fr);
+        min-width: 0;
+        min-height: 0;
+        border-left: 1px solid #3d5877;
+        background: var(--panel);
+        box-shadow: -10px 0 22px rgba(0, 0, 0, 0.18);
+      }
+
+      .control-full {
+        display: grid;
+        grid-template-rows: minmax(0, 1fr) minmax(0, 1fr);
+        gap: 8px;
+        min-height: 0;
+        padding: 8px;
+        background: #0a1424;
+      }
+
+      body.control-collapsed .control-full {
+        display: none;
+      }
+
+      .control-rail {
+        display: none;
+        align-items: center;
+        position: fixed;
+        z-index: 30;
+        top: var(--rail-top, calc(var(--topbar-height) + 18px));
+        right: 12px;
+        border: 1px solid var(--line);
+        border-radius: 9px;
+        padding: 9px 7px;
+        background: rgba(9, 21, 38, 0.94);
+        box-shadow: var(--shadow);
+        user-select: none;
+        touch-action: none;
+      }
+
+      body.control-collapsed .control-rail {
+        display: flex;
+      }
+
+      .rail-label {
+        writing-mode: vertical-rl;
+        color: var(--muted);
+        font-size: 12px;
+        font-weight: 800;
+        line-height: 1.2;
+      }
+
+      .pane {
+        display: grid;
+        grid-template-rows: auto minmax(0, 1fr);
+        min-height: 0;
+        border: 1px solid #2f4662;
+        border-radius: 8px;
+        overflow: hidden;
+        background: #0e1b2e;
+      }
+
+      .pane-head {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 10px;
+        border-bottom: 1px solid var(--line);
+        min-height: 42px;
+        padding: 8px 10px;
+        background: var(--panel-2);
+      }
+
+      .eyebrow {
+        color: var(--muted);
+        font-size: 11px;
+        font-weight: 800;
+        text-transform: uppercase;
+      }
+
+      .pane-head h2,
+      .card-head h3 {
+        margin-top: 2px;
+        font-size: 14px;
+        line-height: 1.3;
+      }
+
+      .pane-body {
+        display: grid;
+        grid-template-rows: minmax(0, 1fr) auto;
+        min-height: 0;
+      }
+
+      .scroll-area {
+        min-height: 0;
+        overflow: auto;
+        scrollbar-width: none;
+      }
+
+      .scroll-area::-webkit-scrollbar {
+        width: 0;
+        height: 0;
+      }
+
+      .messages {
+        display: grid;
+        align-content: start;
+        gap: 10px;
+        padding: 12px;
+      }
+
+      .message {
+        max-width: 88%;
+        border: 1px solid var(--line-soft);
+        border-radius: 10px;
+        padding: 8px 10px;
+        background: #0c1a2c;
+      }
+
+      .message.user {
+        justify-self: end;
+        border-color: #2f71bd;
+        background: #0c2038;
+      }
+
+      .message.system {
+        justify-self: start;
+      }
+
+      .message strong {
+        display: none;
+        margin-bottom: 4px;
+        color: var(--muted);
+        font-size: 12px;
+      }
+
+      .message p {
+        color: var(--soft);
+        font-size: 13px;
+        line-height: 1.45;
+      }
+
+      .composer {
+        border-top: 1px solid var(--line);
+        padding: 8px 10px;
+        background: #0a1728;
+      }
+
+      .composer-line {
+        display: flex;
+        gap: 8px;
+        align-items: flex-start;
+      }
+
+      .composer textarea {
+        flex: 1;
+        width: 100%;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: #0b182a;
+        color: var(--text);
+        height: 38px;
+        min-height: 38px;
+        max-height: 86px;
+        resize: none;
+        padding: 8px 10px 7px;
+        line-height: 1.35;
+      }
+
+      .composer-line .btn.icon {
+        width: 38px;
+        min-width: 38px;
+        min-height: 38px;
+        height: 38px;
+      }
+
+      .pane-head .btn.icon {
+        width: 28px;
+        min-height: 28px;
+        border-radius: 7px;
+        font-size: 12px;
+      }
+
+      .flow-list {
+        padding: 10px;
+      }
+
+      .phase-group {
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        overflow: hidden;
+        background: #0c1a2c;
+        margin-bottom: 10px;
+      }
+
+      .phase-row {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 10px;
+        border-bottom: 1px solid var(--line);
+        padding: 9px 10px;
+        background: #13243a;
+      }
+
+      .phase-row h3,
+      .flow-row h4 {
+        margin: 0;
+        font-size: 13px;
+        line-height: 1.35;
+      }
+
+      .phase-row p,
+      .flow-row p {
+        margin-top: 4px;
+        color: var(--muted);
+        font-size: 12px;
+        line-height: 1.35;
+      }
+
+      .phase-progress {
+        color: var(--muted);
+        font-size: 12px;
+        white-space: nowrap;
+      }
+
+      .flow-row {
+        display: grid;
+        grid-template-columns: 12px minmax(0, 1fr);
+        gap: 9px;
+        align-items: center;
+        border: 0;
+        border-bottom: 1px solid var(--line-soft);
+        padding: 10px;
+        width: 100%;
+        background: transparent;
+        color: inherit;
+        text-align: left;
+      }
+
+      .flow-row:last-child {
+        border-bottom: 0;
+      }
+
+      .flow-row.selected {
+        background: rgba(78, 165, 255, 0.11);
+        box-shadow: inset 3px 0 0 var(--blue);
+      }
+
+      .flow-marker {
+        display: grid;
+        place-items: center;
+        width: 18px;
+        height: 18px;
+        border-radius: 999px;
+        border: 1px solid currentColor;
+        background: rgba(8, 17, 31, 0.72);
+        font-size: 12px;
+        font-weight: 900;
+        line-height: 1;
+      }
+
+      .flow-row.loading {
+        color: var(--neutral);
+        background: transparent;
+      }
+
+      .flow-row.loading .flow-marker {
+        background: transparent;
+      }
+
+      .flow-row.loading .flow-marker::before {
+        content: "";
+      }
+
+      .flow-row.running {
+        color: var(--blue);
+        background: rgba(78, 165, 255, 0.07);
+      }
+
+      .flow-row.running .flow-marker {
+        border-top-color: transparent;
+        animation: spin 900ms linear infinite;
+      }
+
+      .flow-row.running .flow-marker::before {
+        content: "";
+      }
+
+      @keyframes spin {
+        to {
+          transform: rotate(360deg);
+        }
+      }
+
+      .flow-row.complete {
+        color: var(--green);
+        background: transparent;
+      }
+
+      .flow-row.complete .flow-marker::before {
+        content: "√";
+      }
+
+      .flow-row.fail {
+        color: var(--red);
+        background: rgba(255, 90, 95, 0.07);
+      }
+
+      .flow-row.fail .flow-marker {
+        border-color: currentColor;
+      }
+
+      .flow-row.fail .flow-marker::before {
+        content: "×";
+      }
+
+      .flow-row.stopped {
+        color: var(--amber);
+        background: transparent;
+      }
+
+      .flow-row.stopped .flow-marker {
+        background: transparent;
+      }
+
+      .flow-row.stopped .flow-marker::before {
+        content: "!";
+      }
+
+      .status {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        min-height: 25px;
+        border-radius: 999px;
+        padding: 0 8px;
+        font-size: 12px;
+        font-weight: 800;
+        white-space: nowrap;
+      }
+
+      .dot {
+        width: 7px;
+        height: 7px;
+        border-radius: 999px;
+        background: currentColor;
+      }
+
+      .loading {
+        color: var(--neutral);
+        background: rgba(141, 161, 186, 0.13);
+      }
+
+      .running {
+        color: var(--blue);
+        background: rgba(78, 165, 255, 0.14);
+      }
+
+      .complete {
+        color: var(--green);
+        background: rgba(54, 194, 117, 0.14);
+      }
+
+      .fail {
+        color: var(--red);
+        background: rgba(255, 90, 95, 0.14);
+      }
+
+      .stopped {
+        color: var(--amber);
+        background: rgba(233, 166, 58, 0.14);
+      }
+
+      .card-workspace {
+        display: grid;
+        grid-column: 1;
+        grid-row: 1;
+        grid-template-rows: auto minmax(0, 1fr);
+        min-width: 0;
+        min-height: 0;
+        overflow: hidden;
+        background: #07111f;
+      }
+
+      .selection-bar {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 14px;
+        border-bottom: 1px solid var(--line);
+        padding: 12px 16px;
+        background: #0d1b2e;
+      }
+
+      .selection-title {
+        min-width: 0;
+      }
+
+      .selection-title h2 {
+        font-size: 17px;
+        line-height: 1.3;
+      }
+
+      .card-board {
+        position: relative;
+        padding: 14px;
+      }
+
+      .card-grid {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(280px, 1fr));
+        gap: 14px;
+        align-items: start;
+      }
+
+      .card {
+        display: grid;
+        grid-template-rows: auto minmax(0, 1fr);
+        height: var(--card-height);
+        border: 1px solid var(--line);
+        border-radius: var(--radius);
+        overflow: hidden;
+        background: #0d1b2e;
+        box-shadow: 0 1px 0 rgba(255, 255, 255, 0.03);
+      }
+
+      .card.collapsed {
+        height: 58px;
+      }
+
+      .card.collapsed .card-body {
+        display: none;
+      }
+
+      .card.maximized {
+        position: fixed;
+        z-index: 40;
+        top: calc(var(--topbar-height) + 14px);
+        right: calc(var(--side-width) + 16px);
+        bottom: 16px;
+        left: 16px;
+        height: auto;
+        box-shadow: var(--shadow);
+      }
+
+      .card-head {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        border-bottom: 1px solid var(--line);
+        padding: 10px 12px;
+        background: var(--panel-2);
+      }
+
+      .card-title {
+        min-width: 0;
+      }
+
+      .card-title p {
+        margin-top: 3px;
+        color: var(--muted);
+        font-size: 12px;
+      }
+
+      .card-actions {
+        display: flex;
+        align-items: center;
+        gap: 7px;
+      }
+
+      .card-action {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 30px;
+        min-width: 30px;
+        min-height: 30px;
+        border: 1px solid var(--line);
+        border-radius: 7px;
+        background: #0b182a;
+        color: var(--soft);
+        font-size: 16px;
+        font-weight: 800;
+      }
+
+      .card-body {
+        min-height: 0;
+        overflow: hidden;
+        padding: 12px;
+      }
+
+      .media-frame {
+        position: relative;
+        display: grid;
+        place-items: center;
+        height: 230px;
+        border: 1px solid #34516e;
+        border-radius: 7px;
+        overflow: hidden;
+        background:
+          linear-gradient(135deg, rgba(78, 165, 255, 0.16), transparent 32%),
+          linear-gradient(45deg, rgba(255, 255, 255, 0.035) 25%, transparent 25%),
+          #06111f;
+        background-size:
+          auto,
+          18px 18px,
+          auto;
+        color: #b8c7d7;
+        font-size: 13px;
+      }
+
+      .media-frame::before,
+      .media-frame::after {
+        position: absolute;
+        content: "";
+        inset: 12px;
+        border: 1px solid rgba(185, 220, 255, 0.2);
+        pointer-events: none;
+      }
+
+      .media-frame::after {
+        inset: auto 12px 12px auto;
+        width: 90px;
+        height: 34px;
+        border-color: rgba(54, 194, 117, 0.5);
+      }
+
+      .metrics {
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        gap: 8px;
+        margin-top: 10px;
+      }
+
+      .metric,
+      .summary-block,
+      .json-line {
+        border: 1px solid var(--line);
+        border-radius: 7px;
+        padding: 9px;
+        background: #0a1728;
+        color: var(--soft);
+        font-size: 12px;
+        line-height: 1.4;
+      }
+
+      .metric strong {
+        display: block;
+        margin-bottom: 3px;
+        color: var(--text);
+        font-size: 16px;
+      }
+
+      .map-card {
+        height: 288px;
+        border: 1px solid #34516e;
+        border-radius: 7px;
+        padding: 12px;
+        background:
+          linear-gradient(90deg, rgba(78, 165, 255, 0.08) 1px, transparent 1px),
+          linear-gradient(rgba(78, 165, 255, 0.08) 1px, transparent 1px),
+          radial-gradient(circle at 62% 42%, rgba(54, 194, 117, 0.3), transparent 9%),
+          radial-gradient(circle at 34% 58%, rgba(233, 166, 58, 0.28), transparent 8%),
+          #06111f;
+        background-size:
+          32px 32px,
+          32px 32px,
+          auto,
+          auto,
+          auto;
+      }
+
+      .map-points {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        margin-top: 210px;
+      }
+
+      .point {
+        border: 1px solid var(--line);
+        border-radius: 999px;
+        padding: 5px 8px;
+        background: rgba(6, 17, 31, 0.82);
+        color: var(--soft);
+        font-size: 12px;
+      }
+
+      .table-scroll {
+        overflow: auto;
+        height: 288px;
+      }
+
+      table {
+        width: 100%;
+        min-width: 560px;
+        border-collapse: collapse;
+        font-size: 12px;
+      }
+
+      th,
+      td {
+        border-bottom: 1px solid var(--line);
+        padding: 9px 8px;
+        text-align: left;
+      }
+
+      th {
+        position: sticky;
+        top: 0;
+        background: #102033;
+        color: var(--muted);
+        z-index: 1;
+      }
+
+      .summary-stack,
+      .json-stack {
+        display: grid;
+        gap: 9px;
+      }
+
+      .json-line {
+        font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+        white-space: nowrap;
+        overflow: auto;
+      }
+
+      @media (min-width: 1560px) {
+        .card-grid {
+          grid-template-columns: repeat(3, minmax(280px, 1fr));
+        }
+      }
+
+      @media (max-width: 1100px) {
+        :root {
+          --side-width: 340px;
+        }
+
+        .card-grid {
+          grid-template-columns: 1fr;
+        }
+
+        .metrics {
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+        }
+      }
+
+      @media (max-width: 760px) {
+        body {
+          overflow: hidden;
+        }
+
+        .app {
+          display: grid;
+          height: 100dvh;
+        }
+
+        .topbar {
+          align-items: stretch;
+          flex-direction: column;
+          height: auto;
+          padding: 10px 12px;
+        }
+
+        .top-actions {
+          flex-wrap: wrap;
+        }
+
+        .workspace {
+          display: grid;
+          grid-template-columns: 1fr;
+        }
+
+        .side-panel,
+        .card-workspace {
+          grid-column: 1;
+        }
+
+        body.control-collapsed .control-full {
+          display: grid;
+        }
+
+        body.control-collapsed .control-rail {
+          display: none;
+        }
+
+        .control-full {
+          grid-template-rows: auto auto;
+        }
+
+        .pane {
+          min-height: 360px;
+        }
+
+        .card-workspace {
+          min-height: 80dvh;
+        }
+
+        .selection-bar {
+          align-items: flex-start;
+          flex-direction: column;
+        }
+
+        .card.maximized {
+          left: 12px;
+          top: 12px;
+          right: 12px;
+          bottom: 12px;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="app">
+      <header class="topbar">
+        <div class="brand">
+          <div class="mark">警</div>
+          <div>
+            <h1>公安指挥任务控制台</h1>
+          </div>
+        </div>
+      </header>
+
+      <div class="workspace">
+        <main class="card-workspace" aria-label="卡片工作区">
+
+          <div class="scroll-area card-board">
+            <section class="card-grid" data-card-grid>
+              <article class="card" data-card>
+                <div class="card-head">
+                  <div class="card-title">
+                    <h3>service-a 监控</h3>  
+                  </div>
+                  <div class="card-actions">
+                    <button class="card-action" type="button" data-collapse aria-label="收起 service-a 监控">▴</button>
+                    <button class="card-action" type="button" data-maximize aria-label="最大化 service-a 监控">□</button>
+                  </div>
+                </div>
+                <div class="card-body">
+                  <div class="media-frame">service-a live feed</div>
+                  <div class="metrics">
+                    <div class="metric"><strong>41%</strong>CPU</div>
+                    <div class="metric"><strong>128ms</strong>P95 响应</div>
+                    <div class="metric"><strong>0.08%</strong>错误率</div>
+                    <div class="metric"><strong>在线</strong>流状态</div>
+                  </div>
+                </div>
+              </article>
+
+              <article class="card" data-card>
+                <div class="card-head">
+                  <div class="card-title">
+                    <h3>周边点位</h3>
+                  </div>
+                  <div class="card-actions">
+                    <button class="card-action" type="button" data-collapse aria-label="收起周边点位">▴</button>
+                    <button class="card-action" type="button" data-maximize aria-label="最大化周边点位">□</button>
+                  </div>
+                </div>
+                <div class="card-body">
+                  <div class="map-card">
+                    <div class="map-points">
+                      <span class="point">A 点 116.40, 39.91</span>
+                      <span class="point">B 点 116.42, 39.90</span>
+                      <span class="point">C 点 116.39, 39.92</span>
+                    </div>
+                  </div>
+                </div>
+              </article>
+
+              <article class="card" data-card>
+                <div class="card-head">
+                  <div class="card-title">
+                    <h3>资源清单</h3>
+                  </div>
+                  <div class="card-actions">
+                    <button class="card-action" type="button" data-collapse aria-label="收起资源清单">▴</button>
+                    <button class="card-action" type="button" data-maximize aria-label="最大化资源清单">□</button>
+                  </div>
+                </div>
+                <div class="card-body">
+                  <div class="scroll-area table-scroll">
+                    <table>
+                      <thead>
+                        <tr>
+                          <th>资源</th>
+                          <th>状态</th>
+                          <th>数量</th>
+                          <th>位置</th>
+                          <th>负责人</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        <tr>
+                          <td>摄像头</td>
+                          <td>可用</td>
+                          <td>12</td>
+                          <td>核心区域</td>
+                          <td>一组</td>
+                        </tr>
+                        <tr>
+                          <td>警员</td>
+                          <td>待命</td>
+                          <td>4</td>
+                          <td>东侧入口</td>
+                          <td>二组</td>
+                        </tr>
+                        <tr>
+                          <td>车辆</td>
+                          <td>可派发</td>
+                          <td>2</td>
+                          <td>北侧停车区</td>
+                          <td>指挥台</td>
+                        </tr>
+                        <tr>
+                          <td>通信设备</td>
+                          <td>在线</td>
+                          <td>8</td>
+                          <td>移动节点</td>
+                          <td>保障组</td>
+                        </tr>
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              </article>
+
+              <article class="card" data-card>
+                <div class="card-head">
+                  <div class="card-title">
+                    <h3>目录摘要</h3>
+                  </div>
+                  <div class="card-actions">
+                    <button class="card-action" type="button" data-collapse aria-label="收起目录摘要">▴</button>
+                    <button class="card-action" type="button" data-maximize aria-label="最大化目录摘要">□</button>
+                  </div>
+                </div>
+                <div class="card-body">
+                  <div class="summary-stack">
+                    <div class="summary-block">当前目录是 Pi monorepo，用于验证 coding-agent、TUI、RPC 和任务控制台相关能力。</div>
+                    <div class="summary-block">未发现需要人工确认的异常。</div>
+                  </div>
+                </div>
+              </article>
+
+              <article class="card" data-card>
+                <div class="card-head">
+                  <div class="card-title">
+                    <h3>结构化结果</h3>
+                  </div>
+                  <div class="card-actions">
+                    <button class="card-action" type="button" data-collapse aria-label="收起结构化结果">▴</button>
+                    <button class="card-action" type="button" data-maximize aria-label="最大化结构化结果">□</button>
+                  </div>
+                </div>
+                <div class="card-body">
+                  <div class="json-stack">
+                    <div class="json-line">{ "taskId": "task-6", "dataType": "json", "status": "loading" }</div>
+                    <div class="json-line">{ "phase": "现场复核", "source": "demo-result" }</div>
+                  </div>
+                </div>
+              </article>
+              <article class="card" data-card>
+                <div class="card-head">
+                  <div class="card-title">
+                    <h3>结构化结果</h3>
+                  </div>
+                  <div class="card-actions">
+                    <button class="card-action" type="button" data-collapse aria-label="收起结构化结果">▴</button>
+                    <button class="card-action" type="button" data-maximize aria-label="最大化结构化结果">□</button>
+                  </div>
+                </div>
+                <div class="card-body">
+                  <div class="json-stack">
+                    <div class="json-line">{ "taskId": "task-6", "dataType": "json", "status": "loading" }</div>
+                    <div class="json-line">{ "phase": "现场复核", "source": "demo-result" }</div>
+                  </div>
+                </div>
+              </article>
+              <article class="card" data-card>
+                <div class="card-head">
+                  <div class="card-title">
+                    <h3>结构化结果</h3>
+                  </div>
+                  <div class="card-actions">
+                    <button class="card-action" type="button" data-collapse aria-label="收起结构化结果">▴</button>
+                    <button class="card-action" type="button" data-maximize aria-label="最大化结构化结果">□</button>
+                  </div>
+                </div>
+                <div class="card-body">
+                  <div class="json-stack">
+                    <div class="json-line">{ "taskId": "task-6", "dataType": "json", "status": "loading" }</div>
+                    <div class="json-line">{ "phase": "现场复核", "source": "demo-result" }</div>
+                  </div>
+                </div>
+              </article>
+            </section>
+          </div>
+        </main>
+
+        <aside class="side-panel" aria-label="AI 对话与流程">
+          <button class="control-rail" type="button" data-toggle-control aria-label="展开智能协同">
+            <div class="rail-label" style="color: #00b6ff;">智能协同</div>
+          </button>
+
+          <div class="control-full">
+            <section class="pane" aria-label="指令与系统回执">
+              <div class="pane-head">
+                <div>
+                  <h2>智能协同</h2>
+                </div>
+                <button class="btn icon" type="button" data-toggle-control aria-label="收起智能协同">›</button>
+              </div>
+
+              <div class="pane-body">
+                <div class="scroll-area messages" aria-live="polite" data-messages>
+                  <article class="message user">
+                    <strong>用户</strong>
+                    <p>执行先期处置，并确认资源状态。</p>
+                  </article>
+                  <article class="message system">
+                    <strong>系统</strong>
+                    <p>已进入预案指引，当前包含 2 个阶段、5 个动作。</p>
+                  </article>
+                  <article class="message system">
+                    <strong>系统</strong>
+                    <p>【先期处置】【打开服务监控】执行中。</p>
+                  </article>
+                  <article class="message user">
+                    <strong>用户</strong>
+                    <p>改为只打开监控并刷新地图。</p>
+                  </article>
+                  <article class="message system">
+                    <strong>系统</strong>
+                    <p>收到新指令，当前任务将在安全边界停止。</p>
+                  </article>
+                  <article class="message system">
+                    <strong>系统</strong>
+                    <p>【资源确认】【模拟失败任务】失败：文件不存在。</p>
+                  </article>
+                </div>
+
+                <form class="composer">
+                  <div class="composer-line">
+                    <textarea aria-label="输入新指令" data-instruction>执行先期处置，并确认资源状态。</textarea>
+                    <button class="btn icon primary" type="submit" aria-label="发送">▶</button>
+                    <button class="btn icon stop" type="button" aria-label="停止" data-stop>■</button>
+                  </div>
+                </form>
+              </div>
+            </section>
+
+            <section class="pane" aria-label="预案指引">
+              <div class="pane-head">
+                <div>
+                  <h2>预案指引</h2>
+                </div>
+                <span class="phase-progress" data-total-progress>0 / 5</span>
+              </div>
+
+              <div class="pane-body">
+                <div class="scroll-area flow-list" data-flow-list>
+                  <article class="phase-group">
+                    <div class="phase-row">
+                      <div>
+                        <h3>先期处置</h3>
+                      </div>
+                      <span class="phase-progress">1 / 3</span>
+                    </div>
+                    <button class="flow-row complete" type="button">
+                      <span class="flow-marker" aria-hidden="true"></span>
+                      <div>
+                        <h4>总结当前目录</h4>
+                      </div>
+                    </button>
+                    <button class="flow-row running selected" type="button">
+                      <span class="flow-marker" aria-hidden="true"></span>
+                      <div>
+                        <h4>打开服务监控</h4>
+                      </div>
+                    </button>
+                    <button class="flow-row stopped" type="button">
+                      <span class="flow-marker" aria-hidden="true"></span>
+                      <div>
+                        <h4>查询地图点位</h4>
+                      </div>
+                    </button>
+                  </article>
+
+                  <article class="phase-group">
+                    <div class="phase-row">
+                      <div>
+                        <h3>资源确认</h3>
+                      </div>
+                      <span class="phase-progress">1 / 2</span>
+                    </div>
+                    <button class="flow-row complete" type="button">
+                      <span class="flow-marker" aria-hidden="true"></span>
+                      <div>
+                        <h4>拉取资源清单</h4>
+                      </div>
+                    </button>
+                    <button class="flow-row fail" type="button">
+                      <span class="flow-marker" aria-hidden="true"></span>
+                      <div>
+                        <h4>模拟失败任务</h4>
+                      </div>
+                    </button>
+                  </article>
+
+                  <article class="phase-group">
+                    <div class="phase-row">
+                      <div>
+                        <h3>现场复核</h3>
+                      </div>
+                      <span class="phase-progress">0 / 3</span>
+                    </div>
+                    <button class="flow-row loading" type="button">
+                      <span class="flow-marker" aria-hidden="true"></span>
+                      <div>
+                        <h4>校验监控时间窗</h4>
+                      </div>
+                    </button>
+                    <button class="flow-row loading" type="button">
+                      <span class="flow-marker" aria-hidden="true"></span>
+                      <div>
+                        <h4>比对地图围栏</h4>
+                      </div>
+                    </button>
+                    <button class="flow-row loading" type="button">
+                      <span class="flow-marker" aria-hidden="true"></span>
+                      <div>
+                        <h4>同步外部记录</h4>
+                      </div>
+                    </button>
+                  </article>
+                </div>
+              </div>
+            </section>
+          </div>
+        </aside>
+      </div>
+    </div>
+
+    <script>
+      const elements = {
+        cardGrid: document.querySelector("[data-card-grid]"),
+        messages: document.querySelector("[data-messages]"),
+        flowList: document.querySelector("[data-flow-list]"),
+        totalProgress: document.querySelector("[data-total-progress]"),
+        instruction: document.querySelector("[data-instruction]"),
+        stop: document.querySelector("[data-stop]"),
+        composer: document.querySelector(".composer"),
+      };
+
+      const statusText = {
+        idle: "未启动",
+        loading: "等待",
+        running: "执行中",
+        stopping: "停止中",
+        complete: "完成",
+        fail: "失败",
+        stopped: "已停止",
+      };
+
+      const controlButtons = document.querySelectorAll("[data-toggle-control]");
+      for (const button of controlButtons) {
+        button.addEventListener("click", () => {
+          if (button instanceof HTMLElement && button.dataset.dragged === "true") {
+            button.dataset.dragged = "false";
+            return;
+          }
+          document.body.classList.toggle("control-collapsed");
+        });
+      }
+
+      const controlRail = document.querySelector(".control-rail");
+      if (controlRail instanceof HTMLElement) {
+        let dragOffset = 0;
+        let startY = 0;
+
+        controlRail.addEventListener("pointerdown", (event) => {
+          controlRail.setPointerCapture(event.pointerId);
+          controlRail.dataset.dragged = "false";
+          startY = event.clientY;
+          dragOffset = event.clientY - controlRail.getBoundingClientRect().top;
+        });
+
+        controlRail.addEventListener("pointermove", (event) => {
+          if (!controlRail.hasPointerCapture(event.pointerId)) {
+            return;
+          }
+          const minTop = 70;
+          const maxTop = window.innerHeight - controlRail.offsetHeight - 18;
+          const nextTop = Math.max(minTop, Math.min(maxTop, event.clientY - dragOffset));
+          if (Math.abs(event.clientY - startY) > 3) {
+            controlRail.dataset.dragged = "true";
+          }
+          document.documentElement.style.setProperty("--rail-top", `${nextTop}px`);
+        });
+      }
+
+      if (elements.composer instanceof HTMLFormElement) {
+        elements.composer.addEventListener("submit", (event) => {
+          event.preventDefault();
+          const instruction = elements.instruction instanceof HTMLTextAreaElement ? elements.instruction.value.trim() : "";
+          if (instruction.length === 0) {
+            return;
+          }
+          void fetch("/api/run", {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ instruction }),
+          });
+        });
+      }
+
+      if (elements.stop instanceof HTMLButtonElement) {
+        elements.stop.addEventListener("click", () => {
+          void fetch("/api/stop", { method: "POST" });
+        });
+      }
+
+      window.addEventListener("keydown", (event) => {
+        if (event.key !== "Escape") {
+          return;
+        }
+        collapseMaximizedCards();
+      });
+
+      void loadInitialSnapshot();
+      connectEvents();
+
+      async function loadInitialSnapshot() {
+        const response = await fetch("/api/snapshot");
+        renderSnapshot(await response.json());
+      }
+
+      function connectEvents() {
+        const source = new EventSource("/events");
+        source.addEventListener("snapshot", (event) => {
+          renderSnapshot(JSON.parse(event.data));
+        });
+      }
+
+      function renderSnapshot(snapshot) {
+        renderMessages(snapshot);
+        renderFlow(snapshot.run.steps);
+        renderCards(snapshot.cards);
+      }
+
+      function renderMessages(snapshot) {
+        if (!(elements.messages instanceof HTMLElement)) {
+          return;
+        }
+        const messages = [];
+        if (snapshot.run.userInstruction) {
+          messages.push(`<article class="message user"><strong>用户</strong><p>${escapeHtml(snapshot.run.userInstruction)}</p></article>`);
+        }
+        for (const receipt of snapshot.receipts) {
+          messages.push(`<article class="message system"><strong>系统</strong><p>${escapeHtml(receipt.message)}</p></article>`);
+        }
+        if (messages.length === 0) {
+          messages.push('<article class="message system"><strong>系统</strong><p>等待任务指令。</p></article>');
+        }
+        elements.messages.innerHTML = messages.join("");
+        elements.messages.scrollTop = elements.messages.scrollHeight;
+      }
+
+      function renderFlow(steps) {
+        if (!(elements.flowList instanceof HTMLElement)) {
+          return;
+        }
+        const totalTasks = steps.flatMap((step) => step.tasks).length;
+        const doneTasks = steps.flatMap((step) => step.tasks).filter((task) => task.status === "complete").length;
+        if (elements.totalProgress instanceof HTMLElement) {
+          elements.totalProgress.textContent = `${doneTasks} / ${totalTasks}`;
+        }
+        elements.flowList.innerHTML = steps.map(renderStep).join("");
+      }
+
+      function renderStep(step) {
+        const done = step.tasks.filter((task) => task.status === "complete").length;
+        return `
+          <article class="phase-group">
+            <div class="phase-row">
+              <div><h3>${escapeHtml(step.title)}</h3></div>
+              <span class="phase-progress">${done} / ${step.tasks.length}</span>
+            </div>
+            ${step.tasks.map(renderTask).join("")}
+          </article>
+        `;
+      }
+
+      function renderTask(task) {
+        return `
+          <button class="flow-row ${escapeHtml(task.status)}" type="button">
+            <span class="flow-marker" aria-hidden="true"></span>
+            <div>
+              <h4>${escapeHtml(task.title)}</h4>
+              <p>${escapeHtml(statusText[task.status] ?? task.status)}</p>
+            </div>
+          </button>
+        `;
+      }
+
+      function renderCards(cards) {
+        if (!(elements.cardGrid instanceof HTMLElement)) {
+          return;
+        }
+        if (cards.length === 0) {
+          elements.cardGrid.innerHTML = `
+            <article class="card" data-card>
+              <div class="card-head"><div class="card-title"><h3>等待业务卡片</h3></div></div>
+              <div class="card-body"><div class="summary-block">任务完成后，后端会根据 card_type 和 card_data 渲染这里。</div></div>
+            </article>
+          `;
+          return;
+        }
+        elements.cardGrid.innerHTML = cards.map(renderCard).join("");
+        bindCardActions();
+      }
+
+      function renderCard(card) {
+        return `
+          <article class="card" data-card>
+            <div class="card-head">
+              <div class="card-title">
+                <h3>${escapeHtml(card.title)}</h3>
+                <p>${escapeHtml(card.type)}</p>
+              </div>
+              <div class="card-actions">
+                <button class="card-action" type="button" data-collapse aria-label="收起${escapeHtml(card.title)}">▴</button>
+                <button class="card-action" type="button" data-maximize aria-label="最大化${escapeHtml(card.title)}">□</button>
+              </div>
+            </div>
+            <div class="card-body">${renderCardBody(card)}</div>
+          </article>
+        `;
+      }
+
+      function renderCardBody(card) {
+        if (card.type === "media") {
+          const gbids = Array.isArray(card.data.gbids) ? card.data.gbids : [];
+          return `
+            <div class="media-frame">${escapeHtml(gbids[0] ?? "media feed")}</div>
+            <div class="metrics">
+              <div class="metric"><strong>${gbids.length}</strong>GBID</div>
+              <div class="metric"><strong>在线</strong>流状态</div>
+              <div class="metric"><strong>RPC</strong>来源</div>
+              <div class="metric"><strong>结构化</strong>数据</div>
+            </div>
+          `;
+        }
+        if (card.type === "map") {
+          const markers = Array.isArray(card.data.markers) ? card.data.markers : [];
+          return `
+            <div class="map-card">
+              <div class="map-points">
+                ${markers.map((marker) => `<span class="point">${escapeHtml(marker.label ?? "点位")} ${escapeHtml(String(marker.lng ?? ""))}, ${escapeHtml(String(marker.lat ?? ""))}</span>`).join("")}
+              </div>
+            </div>
+          `;
+        }
+        if (card.type === "table") {
+          const rows = Array.isArray(card.data.rows) ? card.data.rows : [];
+          const columns = Array.isArray(card.data.columns) && card.data.columns.length > 0
+            ? card.data.columns
+            : Object.keys(rows[0] ?? {}).map((key) => ({ key, label: key }));
+          return `
+            <div class="scroll-area table-scroll">
+              <table>
+                <thead><tr>${columns.map((column) => `<th>${escapeHtml(column.label)}</th>`).join("")}</tr></thead>
+                <tbody>${rows.map((row) => `<tr>${columns.map((column) => `<td>${escapeHtml(String(row[column.key] ?? ""))}</td>`).join("")}</tr>`).join("")}</tbody>
+              </table>
+            </div>
+          `;
+        }
+        if (card.type === "text") {
+          return `<div class="summary-stack"><div class="summary-block">${escapeHtml(card.data.text ?? "")}</div></div>`;
+        }
+        return `<div class="json-stack"><div class="json-line">${escapeHtml(JSON.stringify(card.data))}</div></div>`;
+      }
+
+      function bindCardActions() {
+        const cards = document.querySelectorAll("[data-card]");
+        for (const card of cards) {
+          const collapseButton = card.querySelector("[data-collapse]");
+          const maximizeButton = card.querySelector("[data-maximize]");
+          if (!(collapseButton instanceof HTMLButtonElement) || !(maximizeButton instanceof HTMLButtonElement)) {
+            continue;
+          }
+          collapseButton.addEventListener("click", () => {
+            card.classList.toggle("collapsed");
+            collapseButton.textContent = card.classList.contains("collapsed") ? "▾" : "▴";
+          });
+          maximizeButton.addEventListener("click", () => {
+            const isMaximized = card.classList.toggle("maximized");
+            maximizeButton.textContent = isMaximized ? "×" : "□";
+            for (const otherCard of cards) {
+              if (otherCard !== card) {
+                otherCard.classList.remove("maximized");
+                const otherButton = otherCard.querySelector("[data-maximize]");
+                if (otherButton instanceof HTMLButtonElement) {
+                  otherButton.textContent = "□";
+                }
+              }
+            }
+          });
+        }
+      }
+
+      function collapseMaximizedCards() {
+        for (const card of document.querySelectorAll("[data-card]")) {
+          card.classList.remove("maximized");
+          const maximizeButton = card.querySelector("[data-maximize]");
+          if (maximizeButton instanceof HTMLButtonElement) {
+            maximizeButton.textContent = "□";
+          }
+        }
+      }
+
+      function escapeHtml(value) {
+        return String(value)
+          .replaceAll("&", "&amp;")
+          .replaceAll("<", "&lt;")
+          .replaceAll(">", "&gt;")
+          .replaceAll('"', "&quot;")
+          .replaceAll("'", "&#039;");
+      }
+    </script>
+  </body>
+</html>

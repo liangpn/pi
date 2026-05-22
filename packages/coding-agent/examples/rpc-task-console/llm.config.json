@@ -1,0 +1,14 @@
+{
+  "provider": "rpc-demo",
+  "baseUrl": "http://192.168.20.20:9111/v1",
+  "api": "openai-completions",
+  "apiKeyEnv": "OPENAI_API_KEY",
+  "models": [
+    "Qwen3-30B-A3B-Instruct-2507-Int4-W4A16"
+  ],
+  "selectedModel": "Qwen3-30B-A3B-Instruct-2507-Int4-W4A16",
+  "compat": {
+    "supportsDeveloperRole": false,
+    "supportsReasoningEffort": false
+  }
+}
