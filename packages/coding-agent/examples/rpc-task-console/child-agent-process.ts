@@ -1,6 +1,7 @@
 import type { ChildProcess } from "node:child_process";
 import { attachJsonlLineReader, serializeJsonLine } from "../../src/modes/rpc/jsonl.js";
 import { spawnProcess } from "../../src/utils/child-process.js";
+import { createPersistenceWriter } from "./persistence.js";
 import type { ChildAgentProcessFactoryOptions, ChildAgentProcessLike, NormalizedChildEvent } from "./types.js";
 
 const STDERR_TAIL_LIMIT = 4_000;
@@ -8,6 +9,7 @@ const STDERR_TAIL_LIMIT = 4_000;
 export class ChildAgentProcess implements ChildAgentProcessLike {
 	readonly agentRunId: string;
 	private readonly options: ChildAgentProcessFactoryOptions;
+	private readonly persistence: ReturnType<typeof createPersistenceWriter>;
 	private child: ChildProcess | undefined;
 	private requestSequence = 0;
 	private stderrTail = "";
@@ -16,6 +18,10 @@ export class ChildAgentProcess implements ChildAgentProcessLike {
 	constructor(options: ChildAgentProcessFactoryOptions) {
 		this.options = options;
 		this.agentRunId = `agent-${options.runId}-${options.stepId}-${options.taskId}`;
+		this.persistence = createPersistenceWriter({
+			rpcEventDir: readEnvPath(options.env, "PI_DEMO_RPC_EVENT_DIR"),
+			childStderrDir: readEnvPath(options.env, "PI_DEMO_CHILD_STDERR_DIR"),
+		});
 	}
 
 	get processId(): number | undefined {
@@ -32,23 +38,28 @@ export class ChildAgentProcess implements ChildAgentProcessLike {
 			stdio: ["pipe", "pipe", "pipe"],
 		});
 		this.child = child;
-		this.options.onEvent({ type: "child_started", processId: child.pid });
+		this.emitEvent({ type: "child_spawned", processId: child.pid });
 
 		if (child.stdout) {
 			this.detachStdout = attachJsonlLineReader(child.stdout, (line) => {
-				this.options.onEvent(normalizeChildLine(line));
+				const event = normalizeChildLine(line);
+				if (event) {
+					this.emitEvent(event);
+				}
 			});
 		}
 		child.stderr?.on("data", (chunk: string | Buffer) => {
 			this.stderrTail = appendTail(this.stderrTail, typeof chunk === "string" ? chunk : chunk.toString("utf8"));
+			this.persistStderrTail();
 		});
 		child.on("error", (error) => {
-			this.options.onEvent({ type: "process_error", error: error.message, stderrTail: this.stderrTail });
+			this.emitEvent({ type: "process_error", error: error.message, stderrTail: this.stderrTail });
 		});
 		child.on("close", (exitCode, signal) => {
 			this.detachStdout?.();
 			this.detachStdout = undefined;
-			this.options.onEvent({ type: "process_close", exitCode, signal, stderrTail: this.stderrTail });
+			this.persistStderrTail();
+			this.emitEvent({ type: "process_close", exitCode, signal, stderrTail: this.stderrTail });
 		});
 	}
 
@@ -75,30 +86,68 @@ export class ChildAgentProcess implements ChildAgentProcessLike {
 		this.child?.stdin?.write(serializeJsonLine({ ...command, id }));
 		return id;
 	}
+
+	private emitEvent(event: NormalizedChildEvent): void {
+		this.options.onEvent(event);
+		void this.persistence.appendRpcEvent({
+			runId: this.options.runId,
+			stepId: this.options.stepId,
+			taskId: this.options.taskId,
+			agentRunId: this.agentRunId,
+			time: Date.now(),
+			event,
+		});
+	}
+
+	private persistStderrTail(): void {
+		if (this.stderrTail.length === 0) {
+			return;
+		}
+		void this.persistence.writeChildStderr({
+			runId: this.options.runId,
+			stepId: this.options.stepId,
+			taskId: this.options.taskId,
+			agentRunId: this.agentRunId,
+			stderrTail: this.stderrTail,
+		});
+	}
 }
 
 export function createChildAgentProcess(options: ChildAgentProcessFactoryOptions): ChildAgentProcessLike {
 	return new ChildAgentProcess(options);
 }
 
-export function normalizeChildLine(line: string): NormalizedChildEvent {
+export function normalizeChildLine(line: string): NormalizedChildEvent | undefined {
 	let parsed: unknown;
 	try {
 		parsed = JSON.parse(line);
 	} catch (error: unknown) {
 		return {
-			type: "diagnostic",
+			type: "unknown_json_event",
 			message: "Failed to parse child JSONL line",
+			rawLine: line,
 			detail: error instanceof Error ? error.message : String(error),
 		};
 	}
 
 	if (!isRecord(parsed)) {
-		return { type: "diagnostic", message: "Child JSONL line was not an object", detail: parsed };
+		return {
+			type: "unknown_json_event",
+			message: "Child JSONL line was not an object",
+			rawLine: line,
+			detail: parsed,
+		};
 	}
 
 	const eventType = stringField(parsed, "type");
 	if (eventType === "response") {
+		if (stringField(parsed, "command") === "prompt" && parsed.success !== true) {
+			return {
+				type: "prompt_response_failure",
+				id: stringField(parsed, "id"),
+				error: stringField(parsed, "error"),
+			};
+		}
 		return {
 			type: "rpc_response",
 			id: stringField(parsed, "id"),
@@ -130,6 +179,7 @@ export function normalizeChildLine(line: string): NormalizedChildEvent {
 			type: "tool_execution_update",
 			toolCallId: stringField(parsed, "toolCallId"),
 			toolName: stringField(parsed, "toolName"),
+			args: parsed.args,
 			partialResult: parsed.partialResult,
 		};
 	}
@@ -152,12 +202,35 @@ export function normalizeChildLine(line: string): NormalizedChildEvent {
 		return { type: "turn_start" };
 	}
 	if (eventType === "turn_end") {
-		return { type: "turn_end", message: parsed.message };
+		return { type: "turn_end", message: parsed.message, toolResults: parsed.toolResults };
 	}
 	if (eventType === "agent_end") {
 		return { type: "agent_end", messages: parsed.messages, willRetry: parsed.willRetry === true };
 	}
-	return { type: "diagnostic", message: `Unhandled child event: ${eventType ?? "unknown"}`, detail: parsed };
+	if (eventType === "auto_retry_start") {
+		return {
+			type: "auto_retry_start",
+			attempt: numberField(parsed, "attempt"),
+			maxAttempts: numberField(parsed, "maxAttempts"),
+			delayMs: numberField(parsed, "delayMs"),
+			errorMessage: stringField(parsed, "errorMessage"),
+		};
+	}
+	if (eventType === "auto_retry_end") {
+		return {
+			type: "auto_retry_end",
+			success: booleanField(parsed, "success"),
+			attempt: numberField(parsed, "attempt"),
+			finalError: stringField(parsed, "finalError"),
+		};
+	}
+	return {
+		type: "unknown_json_event",
+		message: `Unhandled child event: ${eventType ?? "unknown"}`,
+		eventType: eventType ?? undefined,
+		rawLine: line,
+		detail: parsed,
+	};
 }
 
 function appendTail(current: string, value: string): string {
@@ -172,4 +245,19 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 function stringField(value: Record<string, unknown>, field: string): string | undefined {
 	const candidate = value[field];
 	return typeof candidate === "string" ? candidate : undefined;
+}
+
+function numberField(value: Record<string, unknown>, field: string): number | undefined {
+	const candidate = value[field];
+	return typeof candidate === "number" ? candidate : undefined;
+}
+
+function booleanField(value: Record<string, unknown>, field: string): boolean | undefined {
+	const candidate = value[field];
+	return typeof candidate === "boolean" ? candidate : undefined;
+}
+
+function readEnvPath(env: NodeJS.ProcessEnv, key: string): string | undefined {
+	const value = env[key]?.trim();
+	return value && value.length > 0 ? value : undefined;
 }

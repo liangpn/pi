@@ -9,7 +9,9 @@ import type {
 	RuntimeTask,
 	SystemReceipt,
 	TableCardData,
+	TaskAttempt,
 	TaskLogEntry,
+	TaskResult,
 	TaskSnapshot,
 	TaskStatus,
 	TaskStoreEvent,
@@ -58,6 +60,7 @@ export class TaskStore {
 			cards: [],
 			logs: [],
 			receipts: [],
+			conversationMessages: [],
 		});
 	}
 
@@ -94,6 +97,7 @@ export class TaskStore {
 					level: "info",
 				},
 			],
+			conversationMessages: [],
 		};
 		this.emit();
 		return this.getSnapshot().run;
@@ -104,23 +108,42 @@ export class TaskStore {
 			return;
 		}
 
-		const task = this.findTask(event.stepId, event.taskId);
-		if (!task) {
+		const step = this.findStep(event.stepId);
+		const task = step?.tasks.find((candidate) => candidate.id === event.taskId);
+		if (!step || !task) {
 			return;
 		}
 
-		const nextTask = this.applyToTask(task, event);
-		const nextSteps = this.snapshot.run.steps.map((step) => {
-			if (step.id !== event.stepId) {
-				return step;
-			}
-			const tasks = step.tasks.map((candidate) => (candidate.id === event.taskId ? nextTask : candidate));
-			return { ...step, tasks, status: aggregateStepStatus(tasks.map((candidate) => candidate.status)) };
-		});
+		if (isStateEvent(event) && this.isLateStateEvent(step, task)) {
+			this.snapshot = {
+				...this.snapshot,
+				logs: [...this.snapshot.logs, this.createIgnoredStateLog(event, step, task)],
+			};
+			this.emit();
+			return;
+		}
 
-		const nextLogs = [...this.snapshot.logs, this.createLog(event)];
+		const mutation = this.applyToTask(task, event);
+		const nextTask = mutation.task;
+		const nextSteps = this.snapshot.run.steps.map((candidateStep) => {
+			if (candidateStep.id !== event.stepId) {
+				return candidateStep;
+			}
+			const tasks = candidateStep.tasks.map((candidateTask) =>
+				candidateTask.id === event.taskId ? nextTask : candidateTask,
+			);
+			return {
+				...candidateStep,
+				tasks,
+				status: aggregateStepStatus(tasks.map((candidateTask) => candidateTask.status)),
+			};
+		});
+		const nextLogs = [...this.snapshot.logs, this.createLog(event), ...mutation.extraLogs];
 		const nextReceipts = this.appendReceipt(this.snapshot.receipts, nextSteps, nextTask, event);
 		const nextCards = this.applyCards(this.snapshot.cards, nextTask, event);
+		const nextConversationMessages = mutation.conversationMessage
+			? [...this.snapshot.conversationMessages, mutation.conversationMessage]
+			: [...this.snapshot.conversationMessages];
 		const runStatus = aggregateRunStatus(nextSteps);
 
 		this.snapshot = {
@@ -133,6 +156,7 @@ export class TaskStore {
 			cards: nextCards,
 			logs: nextLogs,
 			receipts: nextReceipts,
+			conversationMessages: nextConversationMessages,
 		};
 		this.emit();
 	}
@@ -149,29 +173,148 @@ export class TaskStore {
 			cards: [],
 			logs: [],
 			receipts: [{ id: `receipt-reset-${time}`, message: "已重置任务骨架", time, level: "info" }],
+			conversationMessages: [],
 		};
 		this.emit();
 	}
 
-	private findTask(stepId: string, taskId: string): RuntimeTask | undefined {
-		return this.snapshot.run.steps.find((step) => step.id === stepId)?.tasks.find((task) => task.id === taskId);
+	private findStep(stepId: string): RuntimeStep | undefined {
+		return this.snapshot.run.steps.find((step) => step.id === stepId);
 	}
 
-	private applyToTask(task: RuntimeTask, event: TaskStoreEvent): RuntimeTask {
-		const base = { ...task, eventCount: task.eventCount + 1 };
+	private isLateStateEvent(step: RuntimeStep, task: RuntimeTask): boolean {
+		return (
+			isTerminalRunStatus(this.snapshot.run.status) ||
+			isTerminalTaskStatus(step.status) ||
+			isTerminalTaskStatus(task.status)
+		);
+	}
+
+	private applyToTask(task: RuntimeTask, event: TaskStoreEvent): TaskMutation {
+		const attempts = this.applyToAttempts(task, event);
+		const base = {
+			...task,
+			attempts,
+			agent: event.agent ? { ...task.agent, ...event.agent } : task.agent,
+			process: event.process ? { ...task.process, ...event.process } : task.process,
+			eventCount: task.eventCount + 1,
+		};
 		if (event.type === "task_started") {
-			return { ...base, status: "running", startedAt: event.time };
+			return {
+				task: {
+					...base,
+					status: "running",
+					startedAt: task.startedAt ?? event.time,
+				},
+				extraLogs: [],
+			};
 		}
 		if (event.type === "task_completed") {
-			return { ...base, status: "complete", result: event.result, finishedAt: event.time };
+			const result = normalizeTaskResult(event.result);
+			const extraLogs =
+				!task.card_type && getResultData(result) !== undefined ? [this.createDataIgnoredLog(event)] : [];
+			return {
+				task: {
+					...base,
+					status: "complete",
+					result,
+					finishedAt: event.time,
+				},
+				extraLogs,
+				conversationMessage: {
+					id: `message-${event.runId}-${event.stepId}-${event.taskId}-${event.time}`,
+					runId: event.runId,
+					stepId: event.stepId,
+					taskId: event.taskId,
+					content: result.content,
+					time: event.time,
+				},
+			};
 		}
 		if (event.type === "task_failed") {
-			return { ...base, status: "fail", error: event.error, finishedAt: event.time };
+			return {
+				task: {
+					...base,
+					status: "fail",
+					error: event.error,
+					finishedAt: event.time,
+				},
+				extraLogs: [],
+			};
 		}
 		if (event.type === "task_stopped") {
-			return { ...base, status: "stopped", stopped: event.stopped, finishedAt: event.time };
+			return {
+				task: {
+					...base,
+					status: "stopped",
+					stopped: event.stopped,
+					finishedAt: event.time,
+				},
+				extraLogs: [],
+			};
 		}
-		return base;
+		return { task: base, extraLogs: [] };
+	}
+
+	private applyToAttempts(task: RuntimeTask, event: TaskStoreEvent): TaskAttempt[] {
+		const attempts = task.attempts.map((attempt) => ({ ...attempt }));
+		const attemptIndex = this.findAttemptIndex(attempts, event);
+		const shouldCreateAttempt = event.type !== "task_log" || hasAttemptMetadata(event);
+		if (attemptIndex < 0 && !shouldCreateAttempt) {
+			return attempts;
+		}
+
+		const existingAttempt = attemptIndex >= 0 ? attempts[attemptIndex] : undefined;
+		const resolvedAttemptNumber = event.attempt ?? existingAttempt?.attempt ?? attempts.length + 1;
+		const resolvedAttemptId = event.attemptId ?? existingAttempt?.id ?? `${task.id}-attempt-${resolvedAttemptNumber}`;
+		const resolvedAgentRunId = event.agentRunId ?? existingAttempt?.agentRunId ?? resolvedAttemptId;
+		const updatedAttempt: TaskAttempt = {
+			id: resolvedAttemptId,
+			taskId: task.id,
+			attempt: resolvedAttemptNumber,
+			agentRunId: resolvedAgentRunId,
+			status: resolveAttemptStatus(existingAttempt?.status, event.type),
+			toolCallCount: event.toolCallCount ?? existingAttempt?.toolCallCount ?? 0,
+			agent: event.agent ? { ...existingAttempt?.agent, ...event.agent } : existingAttempt?.agent,
+			process: event.process ? { ...existingAttempt?.process, ...event.process } : existingAttempt?.process,
+			stopped: event.type === "task_stopped" ? event.stopped : existingAttempt?.stopped,
+			startedAt: existingAttempt?.startedAt ?? task.startedAt ?? event.time,
+			finishedAt: isTerminalAttemptEvent(event.type) ? event.time : existingAttempt?.finishedAt,
+			errorCode: event.type === "task_failed" ? event.error.code : existingAttempt?.errorCode,
+			errorMessage: event.type === "task_failed" ? event.error.message : existingAttempt?.errorMessage,
+		};
+
+		if (attemptIndex >= 0) {
+			attempts.splice(attemptIndex, 1, updatedAttempt);
+			return attempts;
+		}
+		return [...attempts, updatedAttempt];
+	}
+
+	private findAttemptIndex(attempts: readonly TaskAttempt[], event: TaskStoreEvent): number {
+		if (event.attemptId) {
+			const byId = attempts.findIndex((attempt) => attempt.id === event.attemptId);
+			if (byId >= 0) {
+				return byId;
+			}
+		}
+		if (event.agentRunId) {
+			const byAgentRunId = attempts.findIndex((attempt) => attempt.agentRunId === event.agentRunId);
+			if (byAgentRunId >= 0) {
+				return byAgentRunId;
+			}
+		}
+		if (event.attempt !== undefined) {
+			const byAttemptNumber = attempts.findIndex((attempt) => attempt.attempt === event.attempt);
+			if (byAttemptNumber >= 0) {
+				return byAttemptNumber;
+			}
+		}
+		const runningAttemptIndex = attempts.findIndex((attempt) => attempt.status === "running");
+		if (runningAttemptIndex >= 0) {
+			return runningAttemptIndex;
+		}
+		return event.type === "task_log" ? -1 : attempts.length - 1;
 	}
 
 	private createLog(event: TaskStoreEvent): TaskLogEntry {
@@ -184,6 +327,37 @@ export class TaskStore {
 			message: event.type === "task_log" ? event.message : taskEventMessage(event.type),
 			time: event.time,
 			detail: event.type === "task_log" ? event.detail : event,
+		};
+	}
+
+	private createDataIgnoredLog(event: Extract<TaskStoreEvent, { type: "task_completed" }>): TaskLogEntry {
+		return {
+			id: `log-${event.runId}-${event.stepId}-${event.taskId}-${event.time}-data-ignored`,
+			runId: event.runId,
+			stepId: event.stepId,
+			taskId: event.taskId,
+			type: "diagnostic",
+			message: "任务未配置 card_type，忽略 result.data，不创建 card。",
+			time: event.time,
+			detail: event.result,
+		};
+	}
+
+	private createIgnoredStateLog(event: TaskStoreEvent, step: RuntimeStep, task: RuntimeTask): TaskLogEntry {
+		const owner = isTerminalRunStatus(this.snapshot.run.status)
+			? `run 已处于 ${this.snapshot.run.status}`
+			: isTerminalTaskStatus(step.status)
+				? `step 已处于 ${step.status}`
+				: `task 已处于 ${task.status}`;
+		return {
+			id: `log-${event.runId}-${event.stepId}-${event.taskId}-${event.time}-ignored-state`,
+			runId: event.runId,
+			stepId: event.stepId,
+			taskId: event.taskId,
+			type: "diagnostic",
+			message: `忽略迟到状态事件 ${event.type}：${owner}`,
+			time: event.time,
+			detail: event,
 		};
 	}
 
@@ -220,10 +394,11 @@ export class TaskStore {
 			return [...cards];
 		}
 		const remainingCards = cards.filter((card) => card.taskId !== task.id);
-		if (!task.card_type || event.result.card_data === undefined) {
+		const resultData = getResultData(event.result);
+		if (!task.card_type || resultData === undefined) {
 			return remainingCards;
 		}
-		return [...remainingCards, createCard(event.stepId, task, event.result.card_data)];
+		return [...remainingCards, createCard(event.stepId, task, resultData)];
 	}
 
 	private emit(): void {
@@ -232,6 +407,12 @@ export class TaskStore {
 			listener(snapshot);
 		}
 	}
+}
+
+interface TaskMutation {
+	readonly task: RuntimeTask;
+	readonly extraLogs: readonly TaskLogEntry[];
+	readonly conversationMessage?: TaskSnapshot["conversationMessages"][number];
 }
 
 function createCard(stepId: string, task: RuntimeTask, data: unknown): UICard {
@@ -306,7 +487,56 @@ function aggregateRunStatus(steps: readonly RuntimeStep[]): RunStatus {
 	return "running";
 }
 
+function isStateEvent(event: TaskStoreEvent): boolean {
+	return (
+		event.type === "task_started" ||
+		event.type === "task_completed" ||
+		event.type === "task_failed" ||
+		event.type === "task_stopped"
+	);
+}
+
+function isTerminalAttemptEvent(type: TaskStoreEvent["type"]): boolean {
+	return type === "task_completed" || type === "task_failed" || type === "task_stopped";
+}
+
+function resolveAttemptStatus(
+	currentStatus: TaskAttempt["status"] | undefined,
+	type: TaskStoreEvent["type"],
+): TaskAttempt["status"] {
+	if (type === "task_started") {
+		return "running";
+	}
+	if (type === "task_completed") {
+		return "complete";
+	}
+	if (type === "task_failed") {
+		return "fail";
+	}
+	if (type === "task_stopped") {
+		return "stopped";
+	}
+	return currentStatus ?? "running";
+}
+
+function hasAttemptMetadata(event: TaskStoreEvent): boolean {
+	return event.attemptId !== undefined || event.attempt !== undefined || event.agentRunId !== undefined;
+}
+
+function getResultData(result: TaskResult): unknown {
+	return result.data;
+}
+
+function normalizeTaskResult(result: TaskResult): TaskResult {
+	const data = getResultData(result);
+	return data === undefined ? result : { ...result, data };
+}
+
 function isTerminalRunStatus(status: RunStatus): boolean {
+	return status === "complete" || status === "fail" || status === "stopped";
+}
+
+function isTerminalTaskStatus(status: TaskStatus): boolean {
 	return status === "complete" || status === "fail" || status === "stopped";
 }
 

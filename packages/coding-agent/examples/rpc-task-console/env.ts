@@ -1,21 +1,81 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { isAbsolute, join } from "node:path";
+import { prepareChildSettingsSync } from "./child-settings.js";
+import { loadRuntimeConfig, type RuntimeConfig } from "./runtime-config.js";
 
-export interface DemoEnv {
+export interface RpcTaskConsoleEnv {
+	readonly exampleDir: string;
 	readonly port: number;
 	readonly piCommand: string;
 	readonly piArgs: string[];
 	readonly childEnv: NodeJS.ProcessEnv;
 	readonly modelsJsonPath?: string;
 	readonly mcpConfigPath?: string;
+	readonly outputDir: string;
+	readonly snapshotDir: string;
+	readonly logDir: string;
+	readonly rpcEventDir: string;
+	readonly childStderrDir: string;
+	readonly conversationDir: string;
+	readonly childAgentDir: string;
+	readonly childSessionDir?: string;
+	readonly enableChildSession: boolean;
+	readonly runtimeConfigPath: string;
+	readonly runtimeConfig: RuntimeConfig;
+	readonly childSettingsPath: string;
 }
 
-export function loadDemoEnv(exampleDir: string, baseEnv: NodeJS.ProcessEnv): DemoEnv {
+export type DemoEnv = RpcTaskConsoleEnv;
+
+export function loadDemoEnv(exampleDir: string, baseEnv: NodeJS.ProcessEnv): RpcTaskConsoleEnv {
 	const envFile = join(exampleDir, ".env");
 	const localEnv = existsSync(envFile) ? parseEnvFile(readFileSync(envFile, "utf8")) : {};
 	const childEnv: NodeJS.ProcessEnv = { ...baseEnv, ...localEnv };
+	const outputDir = resolvePath(exampleDir, readEnv(childEnv, "PI_DEMO_OUTPUT_DIR") ?? ".rpc-task-console");
+	const snapshotDir = resolveOutputDir(exampleDir, childEnv, "PI_DEMO_SNAPSHOT_DIR", outputDir, "snapshots");
+	const logDir = resolveOutputDir(exampleDir, childEnv, "PI_DEMO_LOG_DIR", outputDir, "logs");
+	const rpcEventDir = resolveOutputDir(exampleDir, childEnv, "PI_DEMO_RPC_EVENT_DIR", outputDir, "rpc-events");
+	const childStderrDir = resolveOutputDir(exampleDir, childEnv, "PI_DEMO_CHILD_STDERR_DIR", outputDir, "stderr");
+	const conversationDir = resolveOutputDir(
+		exampleDir,
+		childEnv,
+		"PI_DEMO_CONVERSATION_DIR",
+		outputDir,
+		"conversation",
+	);
+	const childAgentDir = resolveOutputDir(exampleDir, childEnv, "PI_DEMO_CHILD_AGENT_DIR", outputDir, "pi-agent");
+	const enableChildSession = parseBoolean(childEnv.PI_DEMO_ENABLE_CHILD_SESSION, false);
+	const configuredChildSessionDir = readEnv(childEnv, "PI_DEMO_CHILD_SESSION_DIR");
+	const childSessionDir = configuredChildSessionDir ? resolvePath(exampleDir, configuredChildSessionDir) : undefined;
+	if (enableChildSession && !childSessionDir) {
+		throw new Error("Child session dir is required when PI_DEMO_ENABLE_CHILD_SESSION=true");
+	}
+
+	const runtimeConfigPath = resolveRequiredConfigPath(
+		exampleDir,
+		readEnv(childEnv, "PI_DEMO_RUNTIME_CONFIG") ?? "runtime.config.json",
+		"runtime config",
+	);
+	const runtimeConfig = loadRuntimeConfig(runtimeConfigPath);
+
+	childEnv.PI_DEMO_OUTPUT_DIR = outputDir;
+	childEnv.PI_DEMO_SNAPSHOT_DIR = snapshotDir;
+	childEnv.PI_DEMO_LOG_DIR = logDir;
+	childEnv.PI_DEMO_RPC_EVENT_DIR = rpcEventDir;
+	childEnv.PI_DEMO_CHILD_STDERR_DIR = childStderrDir;
+	childEnv.PI_DEMO_CONVERSATION_DIR = conversationDir;
+	childEnv.PI_DEMO_CHILD_AGENT_DIR = childAgentDir;
+	childEnv.PI_CODING_AGENT_DIR = childAgentDir;
+	childEnv.PI_DEMO_RUNTIME_CONFIG_PATH = runtimeConfigPath;
+	if (childSessionDir) {
+		childEnv.PI_DEMO_CHILD_SESSION_DIR = childSessionDir;
+		childEnv.PI_CODING_AGENT_SESSION_DIR = childSessionDir;
+	} else {
+		delete childEnv.PI_CODING_AGENT_SESSION_DIR;
+	}
+
 	const llmConfig = loadLlmConfig(exampleDir, childEnv);
-	const modelConfig = writeDemoModelsJson(exampleDir, childEnv, llmConfig);
+	const modelConfig = writeDemoModelsJson(childAgentDir, childEnv, llmConfig);
 	const mcpConfigPath = resolveOptionalConfigPath(
 		exampleDir,
 		readEnv(childEnv, "PI_DEMO_MCP_CONFIG"),
@@ -24,6 +84,7 @@ export function loadDemoEnv(exampleDir: string, baseEnv: NodeJS.ProcessEnv): Dem
 	if (mcpConfigPath) {
 		childEnv.PI_DEMO_MCP_CONFIG_PATH = mcpConfigPath;
 	}
+
 	const port = parsePort(childEnv.PI_DEMO_PORT);
 	const piCommand =
 		childEnv.PI_DEMO_PI_COMMAND && childEnv.PI_DEMO_PI_COMMAND.trim().length > 0
@@ -42,9 +103,39 @@ export function loadDemoEnv(exampleDir: string, baseEnv: NodeJS.ProcessEnv): Dem
 					"--model",
 					modelConfig.selectedModel,
 				];
-	const piArgs = mcpConfigPath ? appendMcpExtensionArgs(basePiArgs, exampleDir) : basePiArgs;
+	const piArgs = applyMcpExtensionArgs(
+		applyChildSessionArgs(basePiArgs, enableChildSession ? childSessionDir : undefined),
+		mcpConfigPath,
+		exampleDir,
+	);
 
-	return { port, piCommand, piArgs, childEnv, modelsJsonPath: modelConfig.modelsJsonPath, mcpConfigPath };
+	const env: RpcTaskConsoleEnv = {
+		exampleDir,
+		port,
+		piCommand,
+		piArgs,
+		childEnv,
+		modelsJsonPath: modelConfig.modelsJsonPath,
+		mcpConfigPath,
+		outputDir,
+		snapshotDir,
+		logDir,
+		rpcEventDir,
+		childStderrDir,
+		conversationDir,
+		childAgentDir,
+		childSessionDir,
+		enableChildSession,
+		runtimeConfigPath,
+		runtimeConfig,
+		childSettingsPath: "",
+	};
+	const childSettings = prepareChildSettingsSync(env);
+
+	return {
+		...env,
+		childSettingsPath: childSettings.settingsPath,
+	};
 }
 
 export function parseEnvFile(content: string): Record<string, string> {
@@ -141,7 +232,7 @@ interface DemoLlmConfig {
 }
 
 function writeDemoModelsJson(
-	exampleDir: string,
+	childAgentDir: string,
 	childEnv: NodeJS.ProcessEnv,
 	llmConfig: DemoLlmConfig | undefined,
 ): DemoModelConfig {
@@ -163,10 +254,8 @@ function writeDemoModelsJson(
 		return { provider: "openai", selectedModel };
 	}
 
-	const agentDir = join(exampleDir, ".pi-agent");
-	mkdirSync(agentDir, { recursive: true });
-	childEnv.PI_CODING_AGENT_DIR = agentDir;
-	const modelsJsonPath = join(agentDir, "models.json");
+	mkdirSync(childAgentDir, { recursive: true });
+	const modelsJsonPath = join(childAgentDir, "models.json");
 	const config = {
 		providers: {
 			[provider]: {
@@ -217,18 +306,83 @@ function resolveOptionalConfigPath(
 	defaultFileName: string,
 ): string | undefined {
 	if (configuredPath) {
-		const path = isAbsolute(configuredPath) ? configuredPath : join(exampleDir, configuredPath);
+		const path = resolvePath(exampleDir, configuredPath);
 		return existsSync(path) ? path : undefined;
 	}
 	const defaultPath = join(exampleDir, defaultFileName);
 	return existsSync(defaultPath) ? defaultPath : undefined;
 }
 
-function appendMcpExtensionArgs(args: readonly string[], exampleDir: string): string[] {
-	if (args.includes("--extension") || args.includes("-e")) {
+function resolveRequiredConfigPath(exampleDir: string, configuredPath: string, label: string): string {
+	const path = resolvePath(exampleDir, configuredPath);
+	if (!existsSync(path)) {
+		throw new Error(`Failed to resolve ${label} at ${path}`);
+	}
+	return path;
+}
+
+function resolveOutputDir(
+	exampleDir: string,
+	env: NodeJS.ProcessEnv,
+	key: string,
+	outputDir: string,
+	defaultName: string,
+): string {
+	const configured = readEnv(env, key);
+	return configured ? resolvePath(exampleDir, configured) : join(outputDir, defaultName);
+}
+
+function resolvePath(exampleDir: string, configuredPath: string): string {
+	return isAbsolute(configuredPath) ? configuredPath : join(exampleDir, configuredPath);
+}
+
+function applyMcpExtensionArgs(
+	args: readonly string[],
+	mcpConfigPath: string | undefined,
+	exampleDir: string,
+): string[] {
+	if (!mcpConfigPath || args.includes("--extension") || args.includes("-e")) {
 		return [...args];
 	}
 	return [...args, "--extension", join(exampleDir, "extensions", "mcp-tools.ts")];
+}
+
+function applyChildSessionArgs(args: readonly string[], childSessionDir: string | undefined): string[] {
+	if (childSessionDir) {
+		return [...stripSessionArgs(args), "--session-dir", childSessionDir];
+	}
+	const normalized: string[] = [];
+	let hasNoSession = false;
+	for (let index = 0; index < args.length; index += 1) {
+		const arg = args[index];
+		if (arg === "--session-dir") {
+			index += 1;
+			continue;
+		}
+		if (arg === "--no-session") {
+			hasNoSession = true;
+			normalized.push(arg);
+			continue;
+		}
+		normalized.push(arg);
+	}
+	return hasNoSession ? normalized : [...normalized, "--no-session"];
+}
+
+function stripSessionArgs(args: readonly string[]): string[] {
+	const normalized: string[] = [];
+	for (let index = 0; index < args.length; index += 1) {
+		const arg = args[index];
+		if (arg === "--no-session") {
+			continue;
+		}
+		if (arg === "--session-dir") {
+			index += 1;
+			continue;
+		}
+		normalized.push(arg);
+	}
+	return normalized;
 }
 
 function readEnv(env: NodeJS.ProcessEnv, key: string): string | undefined {

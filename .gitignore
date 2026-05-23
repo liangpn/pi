@@ -41,3 +41,8 @@ plans/
 .pi/hf-sessions/
 .pi/hf-sessions-backup/
 collect.sh
+
+
+codex-cli-harness-notes.md
+repo_review.html
+repo_review.md

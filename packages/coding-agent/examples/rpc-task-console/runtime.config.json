@@ -1,0 +1,19 @@
+{
+  "concurrency_limit": 2,
+  "stop_steer_timeout_ms": 5000,
+  "stop_abort_timeout_ms": 3000,
+  "retry": {
+    "max_attempts": 2,
+    "base_delay_ms": 1000,
+    "max_tool_calls": 8,
+    "retry_on": [
+      "process_error",
+      "process_closed_before_agent_end",
+      "provider_error",
+      "timeout",
+      "tool_limit_exceeded",
+      "validation_error"
+    ]
+  },
+  "minimal_system_tools": []
+}

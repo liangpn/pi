@@ -1,5 +1,6 @@
 import { createChildAgentProcess } from "./child-agent-process.js";
 import type { DemoEnv } from "./env.js";
+import { createPersistenceWriter } from "./persistence.js";
 import { TaskDispatcher } from "./task-dispatcher.js";
 import { TaskStore } from "./task-store.js";
 import { createInitialSteps } from "./tasks.js";
@@ -18,9 +19,14 @@ export class RunManager {
 	private readonly demoEnv: DemoEnv;
 	private readonly childFactory: ChildAgentProcessFactory;
 	private readonly now: () => number;
+	private readonly persistenceWriter: ReturnType<typeof createPersistenceWriter>;
 	private activeDispatcher: TaskDispatcher | undefined;
 	private activeRunId: string | undefined;
 	private activeRunPromise: Promise<void> | undefined;
+	private persistenceRunId: string | undefined;
+	private persistedLogCount = 0;
+	private persistedConversationCount = 0;
+	private pendingPersistence: Promise<void> = Promise.resolve();
 	private runSequence = 0;
 
 	constructor(options: RunManagerOptions) {
@@ -29,6 +35,16 @@ export class RunManager {
 		this.demoEnv = options.demoEnv;
 		this.childFactory = options.childFactory ?? createChildAgentProcess;
 		this.now = options.now ?? Date.now;
+		this.persistenceWriter = createPersistenceWriter({
+			snapshotDir: this.demoEnv.snapshotDir,
+			logDir: this.demoEnv.logDir,
+			conversationDir: this.demoEnv.conversationDir,
+			rpcEventDir: this.demoEnv.rpcEventDir,
+			childStderrDir: this.demoEnv.childStderrDir,
+		});
+		this.store.subscribe((snapshot) => {
+			this.persistSnapshot(snapshot);
+		});
 	}
 
 	getSnapshot(): TaskSnapshot {
@@ -83,9 +99,32 @@ export class RunManager {
 
 	async waitForIdle(): Promise<void> {
 		await this.activeRunPromise;
+		await this.pendingPersistence;
 	}
 
 	private nextRunId(): string {
 		return `run-${this.now()}-${++this.runSequence}`;
+	}
+
+	private persistSnapshot(snapshot: TaskSnapshot): void {
+		if (snapshot.run.id !== this.persistenceRunId) {
+			this.persistenceRunId = snapshot.run.id;
+			this.persistedLogCount = 0;
+			this.persistedConversationCount = 0;
+		}
+		const newLogs = snapshot.logs.slice(this.persistedLogCount);
+		const newConversationMessages = snapshot.conversationMessages.slice(this.persistedConversationCount);
+		this.persistedLogCount = snapshot.logs.length;
+		this.persistedConversationCount = snapshot.conversationMessages.length;
+		const write = async () => {
+			await this.persistenceWriter.writeSnapshot(snapshot);
+			for (const entry of newLogs) {
+				await this.persistenceWriter.appendTaskLog(entry);
+			}
+			for (const message of newConversationMessages) {
+				await this.persistenceWriter.appendConversationMessage(message);
+			}
+		};
+		this.pendingPersistence = this.pendingPersistence.then(write, write);
 	}
 }

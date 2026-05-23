@@ -1,8 +1,15 @@
 export type TaskStatus = "loading" | "running" | "complete" | "fail" | "stopped";
 export type RunStatus = "idle" | "running" | "stopping" | "complete" | "fail" | "stopped";
 export type CardType = "media" | "map" | "table" | "json" | "text";
-export type DataFieldType = "string" | "number" | "boolean" | "array" | "object";
+export type DataFieldType = "string" | "number" | "integer" | "boolean" | "array" | "object";
 export type StopReason = "user_stopped" | "replaced_by_new_instruction" | "timeout_after_stop";
+export type TaskRetryReason =
+	| "process_error"
+	| "process_closed_before_agent_end"
+	| "provider_error"
+	| "timeout"
+	| "tool_limit_exceeded"
+	| "validation_error";
 
 export interface PlanStep {
 	readonly id: string;
@@ -14,11 +21,19 @@ export interface PlanTask {
 	readonly id: string;
 	readonly title: string;
 	readonly description: string;
-	readonly mcp: readonly string[];
-	readonly skills: readonly string[];
+	readonly tools?: readonly string[];
+	readonly skills?: readonly string[];
+	readonly retry?: TaskRetryPolicy;
 	readonly card_type?: CardType;
 	readonly data_structure?: readonly DataField[];
 	readonly demoOutcome?: "normal" | "force_fail_after_run";
+}
+
+export interface TaskRetryPolicy {
+	readonly max_attempts?: number;
+	readonly base_delay_ms?: number;
+	readonly max_tool_calls?: number;
+	readonly retry_on?: readonly TaskRetryReason[];
 }
 
 export interface DataField {
@@ -42,11 +57,15 @@ export interface RuntimeTask {
 	readonly stepId: string;
 	readonly title: string;
 	readonly description: string;
-	readonly mcp: readonly string[];
+	readonly tools: readonly string[];
 	readonly skills: readonly string[];
+	readonly retry?: TaskRetryPolicy;
 	readonly card_type?: CardType;
 	readonly data_structure?: readonly DataField[];
+	readonly attempts: readonly TaskAttempt[];
 	readonly status: TaskStatus;
+	readonly agent?: TaskAgentMetadata;
+	readonly process?: TaskProcessMetadata;
 	readonly agentRun?: AgentRunState;
 	readonly result?: TaskResult;
 	readonly error?: TaskError;
@@ -55,6 +74,34 @@ export interface RuntimeTask {
 	readonly startedAt?: number;
 	readonly finishedAt?: number;
 	readonly demoOutcome?: "normal" | "force_fail_after_run";
+}
+
+export interface TaskAttempt {
+	readonly id: string;
+	readonly taskId: string;
+	readonly attempt: number;
+	readonly agentRunId: string;
+	readonly status: "running" | "complete" | "fail" | "stopped";
+	readonly toolCallCount: number;
+	readonly agent?: TaskAgentMetadata;
+	readonly process?: TaskProcessMetadata;
+	readonly stopped?: TaskStopped;
+	readonly startedAt: number;
+	readonly finishedAt?: number;
+	readonly errorCode?: string;
+	readonly errorMessage?: string;
+}
+
+export interface TaskAgentMetadata {
+	readonly processId?: number;
+	readonly sessionDir?: string;
+	readonly command: readonly string[];
+}
+
+export interface TaskProcessMetadata {
+	readonly closeCode?: number | null;
+	readonly signal?: string | null;
+	readonly stderrTail?: string;
 }
 
 export interface AgentRunState {
@@ -69,15 +116,15 @@ export interface AgentRunState {
 	readonly stderrTail?: string;
 }
 
-export interface AgentTaskResult<TCardData = unknown> {
+export interface AgentTaskResult<TData = unknown> {
 	readonly content: string;
-	readonly card_data?: TCardData;
+	readonly data?: TData;
 }
 
-export interface TaskResult<TCardData = unknown> {
+export interface TaskResult<TData = unknown> {
 	readonly status: "complete";
 	readonly content: string;
-	readonly card_data?: TCardData;
+	readonly data?: TData;
 }
 
 export interface TaskError {
@@ -91,6 +138,16 @@ export interface TaskStopped {
 	readonly status: "stopped";
 	readonly reason: StopReason;
 	readonly message: string;
+	readonly detail?: string;
+}
+
+export interface TaskConversationMessage {
+	readonly id: string;
+	readonly runId: string;
+	readonly stepId: string;
+	readonly taskId: string;
+	readonly content: string;
+	readonly time: number;
 }
 
 export interface TextCardData {
@@ -174,41 +231,51 @@ export interface TaskSnapshot {
 	readonly cards: readonly UICard[];
 	readonly logs: readonly TaskLogEntry[];
 	readonly receipts: readonly SystemReceipt[];
+	readonly conversationMessages: readonly TaskConversationMessage[];
+}
+
+interface TaskStoreDiagnosticFields {
+	readonly attemptId?: string;
+	readonly attempt?: number;
+	readonly agentRunId?: string;
+	readonly toolCallCount?: number;
+	readonly agent?: TaskAgentMetadata;
+	readonly process?: TaskProcessMetadata;
 }
 
 export type TaskStoreEvent =
-	| {
+	| ({
 			readonly type: "task_started";
 			readonly runId: string;
 			readonly stepId: string;
 			readonly taskId: string;
 			readonly time: number;
-	  }
-	| {
+	  } & TaskStoreDiagnosticFields)
+	| ({
 			readonly type: "task_completed";
 			readonly runId: string;
 			readonly stepId: string;
 			readonly taskId: string;
 			readonly result: TaskResult;
 			readonly time: number;
-	  }
-	| {
+	  } & TaskStoreDiagnosticFields)
+	| ({
 			readonly type: "task_failed";
 			readonly runId: string;
 			readonly stepId: string;
 			readonly taskId: string;
 			readonly error: TaskError;
 			readonly time: number;
-	  }
-	| {
+	  } & TaskStoreDiagnosticFields)
+	| ({
 			readonly type: "task_stopped";
 			readonly runId: string;
 			readonly stepId: string;
 			readonly taskId: string;
 			readonly stopped: TaskStopped;
 			readonly time: number;
-	  }
-	| {
+	  } & TaskStoreDiagnosticFields)
+	| ({
 			readonly type: "task_log";
 			readonly runId: string;
 			readonly stepId: string;
@@ -217,15 +284,20 @@ export type TaskStoreEvent =
 			readonly logType: string;
 			readonly detail?: unknown;
 			readonly time: number;
-	  };
+	  } & TaskStoreDiagnosticFields);
 
 export type NormalizedChildEvent =
-	| { readonly type: "child_started"; readonly processId?: number }
+	| { readonly type: "child_spawned"; readonly processId?: number }
 	| {
 			readonly type: "rpc_response";
 			readonly id?: string;
 			readonly command?: string;
 			readonly success: boolean;
+			readonly error?: string;
+	  }
+	| {
+			readonly type: "prompt_response_failure";
+			readonly id?: string;
 			readonly error?: string;
 	  }
 	| { readonly type: "agent_start" }
@@ -240,6 +312,7 @@ export type NormalizedChildEvent =
 			readonly type: "tool_execution_update";
 			readonly toolCallId?: string;
 			readonly toolName?: string;
+			readonly args?: unknown;
 			readonly partialResult?: unknown;
 	  }
 	| {
@@ -252,8 +325,21 @@ export type NormalizedChildEvent =
 	| { readonly type: "message_start"; readonly message?: unknown }
 	| { readonly type: "message_end"; readonly message?: unknown }
 	| { readonly type: "turn_start" }
-	| { readonly type: "turn_end"; readonly message?: unknown }
+	| { readonly type: "turn_end"; readonly message?: unknown; readonly toolResults?: unknown }
 	| { readonly type: "agent_end"; readonly messages?: unknown; readonly willRetry?: boolean }
+	| {
+			readonly type: "auto_retry_start";
+			readonly attempt?: number;
+			readonly maxAttempts?: number;
+			readonly delayMs?: number;
+			readonly errorMessage?: string;
+	  }
+	| {
+			readonly type: "auto_retry_end";
+			readonly success?: boolean;
+			readonly attempt?: number;
+			readonly finalError?: string;
+	  }
 	| {
 			readonly type: "process_close";
 			readonly exitCode: number | null;
@@ -261,7 +347,13 @@ export type NormalizedChildEvent =
 			readonly stderrTail?: string;
 	  }
 	| { readonly type: "process_error"; readonly error: string; readonly stderrTail?: string }
-	| { readonly type: "diagnostic"; readonly message: string; readonly detail?: unknown };
+	| {
+			readonly type: "unknown_json_event";
+			readonly message: string;
+			readonly eventType?: string;
+			readonly rawLine?: string;
+			readonly detail?: unknown;
+	  };
 
 export interface ChildAgentProcessLike {
 	readonly agentRunId: string;
