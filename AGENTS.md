@@ -10,6 +10,7 @@ If `.codex-harness.toml` sets `allow_main_agent_code_edits = false`:
 - The main session MAY perform only control-plane work: read-only inspection, requirement alignment, planning, subagent delegation, review, test command dispatch, confirmed structural or semantic changes to spec/plan/ledger, and routine factual status updates to already-confirmed plan/ledger files.
 - "Continue working", "do meaningful non-overlapping work", or "carry the work through implementation" MUST be interpreted as control-plane work only.
 - If a subagent times out, fails, or leaves partial code changes, the main session MUST NOT take over implementation. It may stop the subagent, record evidence, review diffs, ask the user, or delegate a new subagent.
+- When a subagent reaches a final state (`completed`, `failed`, `shutdown`, or no longer needed), the main session MUST collect its final report/status, preserve relevant evidence in the ledger when applicable, then close the subagent process with the agent close tool. Do not leave completed subagents running.
 - Subagents may implement only within explicitly delegated write scopes and MUST NOT commit unless the user explicitly asks.
 
 ## Conversational Style
