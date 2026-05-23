@@ -8,5 +8,5 @@ if (!hasHarnessConfig(input.cwd)) {
 
 outputContext(
   "PostToolUse",
-  "如果刚才的工具调用产生了与当前 harness 任务相关的事实、文件变更、验证结果或风险，请在后续回复或 ledger 中保留证据。"
+  "如工具产生了当前 harness 任务的关键事实、验证结果或风险，后续回复或 ledger 需保留证据；普通过程不要写成流水账。"
 );

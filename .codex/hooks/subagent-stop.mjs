@@ -7,5 +7,7 @@ if (!hasHarnessConfig(input.cwd) || input.stop_hook_active) {
 }
 
 if (!textHasReportShape(input.last_assistant_message || "")) {
-  continueTurn("请补充子代理收尾报告：完成内容、涉及文件、验证结果、风险/未决问题。保持简短，只补充事实。");
+  continueTurn(
+    "请补充简短子代理收尾报告：完成内容、涉及文件、验证结果、风险/未决问题；未运行验证要明确说明。"
+  );
 }

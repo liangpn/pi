@@ -14,5 +14,5 @@ if (!hasHarnessSkill(input.cwd)) {
 
 outputContext(
   "PreToolUse",
-  "如果这次工具调用会创建或修改 harness/spec/plan/ledger/agent/hook 配置，必须已经向用户说明原因、影响文件和方案，并获得确认。"
+  "harness/spec/plan/ledger/agent/hook 的结构或语义变更必须已获用户确认；例行 plan/ledger 事实状态更新可直接记录。"
 );
