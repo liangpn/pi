@@ -1,0 +1,6 @@
+[features]
+hooks = true
+
+[[skills.config]]
+path = ".codex/skills/codex-harness"
+enabled = true

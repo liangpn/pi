@@ -1,0 +1,7 @@
+interface:
+  display_name: "Codex Harness"
+  short_description: "引导长期或复杂开发任务建立协作结构"
+  default_prompt: "Use $codex-harness to inspect this project and propose the minimal development harness before starting a complex task."
+
+policy:
+  allow_implicit_invocation: true

@@ -1,0 +1,11 @@
+enabled = true
+mode = "control-plane"
+language = "zh-CN"
+
+spec_dirs = ["docs/superpowers/specs"]
+plan_dirs = ["docs/superpowers/plans"]
+ledger_path = "docs/superpowers/ledgers/ledger-rpc-task-console.md"
+
+require_user_confirmation = true
+control_plane_default = true
+allow_main_agent_code_edits = false
