@@ -13,18 +13,6 @@
         ]
       }
     ],
-    "UserPromptSubmit": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "node \"$(git rev-parse --show-toplevel)/.codex/hooks/user-prompt-submit.mjs\"",
-            "timeout": 10,
-            "statusMessage": "Checking harness intent"
-          }
-        ]
-      }
-    ],
     "SubagentStart": [
       {
         "hooks": [
@@ -71,19 +59,6 @@
             "command": "node \"$(git rev-parse --show-toplevel)/.codex/hooks/permission-request.mjs\"",
             "timeout": 10,
             "statusMessage": "Checking permission request"
-          }
-        ]
-      }
-    ],
-    "PostToolUse": [
-      {
-        "matcher": "Bash|apply_patch|Edit|Write",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "node \"$(git rev-parse --show-toplevel)/.codex/hooks/post-tool-use.mjs\"",
-            "timeout": 10,
-            "statusMessage": "Recording harness evidence"
           }
         ]
       }

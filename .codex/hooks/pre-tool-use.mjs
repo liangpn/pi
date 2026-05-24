@@ -12,7 +12,16 @@ if (!hasHarnessSkill(input.cwd)) {
   process.exit(0);
 }
 
-outputContext(
-  "PreToolUse",
-  "harness/spec/plan/ledger/agent/hook 的结构或语义变更必须已获用户确认；例行 plan/ledger 事实状态更新可直接记录。"
-);
+const toolName = typeof input.tool_name === "string" ? input.tool_name : "";
+const isDirectWriteTool = /apply_patch|Edit|Write/.test(toolName);
+const touchesHarnessBoundary =
+  /\.codex-harness\.toml|AGENTS\.md|\.codex\/hooks(?:\.json|\/)|\.codex\/skills\/codex-harness|\.codex\/agents|docs\/superpowers\/(?:specs|plans|ledgers)/.test(
+    command
+  );
+
+if (isDirectWriteTool || touchesHarnessBoundary) {
+  outputContext(
+    "PreToolUse",
+    "修改 harness/spec/plan/ledger/agent/hook 的结构或语义前必须已获用户确认；例行事实状态更新可直接记录。"
+  );
+}
