@@ -5,7 +5,7 @@
 - Spec: `docs/superpowers/specs/spec-rpc-task-console.md`
 - Plan: `docs/superpowers/plans/plan-rpc-task-console.md`
 - 参考资料: `docs/superpowers/specs/references/`
-- 当前阶段: Task 8 已完成并通过主会话复跑验证；下一步是 Task 9 UI 拆分和 snapshot 渲染。
+- 当前阶段: Task 8 已完成并通过主会话复跑验证；Task 9 已开始控制面推进。
 - 主会话职责: 只读检查、需求对齐、计划、子代理委派、复核、验证调度、ledger/plan 更新。
 - 实现职责: 由 `implementation_worker` 子代理承担；主会话不得接管业务代码或测试代码实现。
 - `.codex/hooks.json` Stop hook 删除: 用户已说明为有意修改，当前不恢复，也不作为 Task 风险处理。
@@ -23,6 +23,7 @@
 - Task 6 停止、替换和旧 run 清理: 已完成，plan Step 1-5 已勾选。
 - Task 7 MCP adapter 和 task scoped allowlist: 已完成，plan Step 1-5 已勾选。
 - Task 8 HTTP/SSE API 对齐: 已完成，plan Step 1-3 已勾选。
+- Task 9 UI 拆分和 snapshot 渲染: 已补录 `server.ts` 范围遗漏，准备委派实现子代理。
 
 ## Useful Findings And Scope Corrections
 
@@ -33,6 +34,8 @@
 - Task 6 实现发现 `task-store.ts` 需要支持 run-level stopping metadata、stale event diagnostics 和 reset/replace 状态处理；已纳入实现范围。
 - Task 7 协作问题: 早期委派 prompt 让子代理误判自己是主会话。已按用户确认更新 `AGENTS.md` 和 `.codex/skills/codex-harness/SKILL.md`，后续实现子代理 prompt 只保留极简实现合同，并明确其身份是 `implementation_worker` 子代理。
 - Task 8 实现发现 selected `steps` 必须成为 current run/reset snapshot 的事实源；已将 `run-manager.ts` 和 `task-store.ts` 补入 Task 8 范围。
+- Task 9 范围遗漏: `index.html` 拆分为真实 `styles.css` / `app.js` 后，`server.ts` 不能继续从 `index.html` 正则抽取内联资源；已将 `server.ts` 补入 Task 9 范围。
+- 用户已拍板第一版不实现独立 workflow 选择/编辑模型；`/runs/start`、`/runs/replace` 和空 body 的 `/runs/reset` 都以当前 workflow steps 为 selected steps 语义。
 
 ## Latest Verification
 
@@ -49,9 +52,8 @@
 
 ## Residual Risks / Open Questions
 
-- Task 6 残留风险: 未额外覆盖 `reset()` 与 replace/stop 同时发生的竞态；`RunManager.start()` 在 replace 场景会先返回 pending new run 元数据，但 snapshot 会停留在旧 run `stopping`，直到 cleanup 完成后才切到新 run，现有用例按该语义验证。
-- Task 7 残留风险: 当前验证以单元测试为主，覆盖 child 参数拼装、task-scoped MCP 过滤和 MCP 错误语义；尚未做真实 child Pi 进程 + 实际 extension 装载 + 真实 MCP server 的端到端集成验证。
+- Task 6 残留风险已转入 Task 10: 补测 `reset()` 与 replace/stop 同时发生时，snapshot 回到当前 workflow steps 的 idle 状态，且旧 run/pending replacement 迟到事件不改变 reset 后 snapshot。
+- Task 7 残留风险已转入 Task 10: 手动 demo 验收需包含真实 child Pi process、实际 MCP extension 装载和真实 MCP server 的端到端验证；如本地环境不可用，记录未验证原因和替代验证证据。
 - Task 8 残留风险: `GET /`、`/styles.css`、`/app.js` 依赖服务端对现有 `index.html` 的内联 `<style>` / `<script>` 正则拆分和脚本改写；后续 UI 拆分时应改成真实静态文件，避免结构变更导致转换失效。
-- Task 8 残留风险: UI 的 selected `steps` 来源是最新 snapshot 的 current steps，满足本任务 route 事实源要求，但还不是独立前端选择模型。
-- Task 8 残留风险: `/runs/reset` 已覆盖带 `steps` body 的路径；空 body reset 行为尚未单独测试。若 Task 9 UI 增加 reset 控件，应明确是否发送当前 selected steps。
+- Task 8 残留风险: `/runs/reset` 已覆盖带 `steps` body 的路径；空 body reset 行为已经在 plan 中明确为保持当前 workflow steps 的 idle snapshot，Task 10 还需要补测试覆盖。
 - Gate 4 尚未执行；需等 Task 9 完成后累计复核 Task 8 + Task 9 的 HTTP/SSE API、前端 snapshot 渲染和 UI 行为。

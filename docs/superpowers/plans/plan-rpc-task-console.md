@@ -848,11 +848,14 @@ npx tsx ../../node_modules/vitest/dist/cli.js --run test/rpc-task-console.test.t
 
 **目标：** UI 对齐 reference：卡片只来自 task result，智能协同消息来自 runtime receipts 和 task conversation messages。
 
+第一版不实现独立的 workflow 选择/编辑模型。`/runs/start` 和 `/runs/replace` 直接使用当前 workflow steps 作为 selected steps；`/runs/reset` 若未显式携带 `steps`，也回到当前 workflow steps 的 idle snapshot。
+
 **文件：**
 
 - 修改：`packages/coding-agent/examples/rpc-task-console/index.html`
 - 新增：`packages/coding-agent/examples/rpc-task-console/styles.css`
 - 新增：`packages/coding-agent/examples/rpc-task-console/app.js`
+- 修改：`packages/coding-agent/examples/rpc-task-console/server.ts`
 - 修改：`packages/coding-agent/test/rpc-task-console.test.ts`
 
 - [ ] **Step 1: 拆分静态资源**
@@ -865,6 +868,9 @@ npx tsx ../../node_modules/vitest/dist/cli.js --run test/rpc-task-console.test.t
 ```
 
 页面结构必须包含顶部标题栏，并展示产品名称“公安指挥任务控制台”。
+
+`server.ts` 必须改为服务真实 `index.html`、`styles.css` 和 `app.js` 文件，不再从 `index.html` 正则拆分内联资源。
+`/runs/reset` 空 body 时必须保持当前 workflow steps，不得回退到别的默认 workflow。
 
 - [ ] **Step 2: 移除硬编码业务卡片**
 
@@ -999,6 +1005,7 @@ Media card 使用 `gbids` 等引用数据，不请求后端视频 bytes。
 - concurrency limit。
 - queued/unstarted task 在 stop/replace 后进入 `stopped` 且不启动 child process。
 - stop steer/abort timeout。
+- reset 与 stop/replace 同时发生时，内存 snapshot 回到当前 workflow steps 的 idle 状态，且旧 run/pending replacement 的迟到事件不改变 reset 后 snapshot。
 - replace cleanup。
 - replace 后旧 run 迟到事件被忽略并记录诊断。
 - `runtime.config.json` 存在并与默认 env 契约一致。
@@ -1010,6 +1017,7 @@ Media card 使用 `gbids` 等引用数据，不请求后端视频 bytes。
 - `/runs/start` 接收已选定 `steps` 和 `userInstruction`，缺失任一字段返回 400。
 - `/runs/replace` 接收已选定 `steps` 和 `userInstruction`，缺失任一字段返回 400。
 - `/runs/reset` 清空内存 snapshot，不删除本地持久化目录。
+- `/runs/reset` 空 body 时回到当前 workflow steps 的 idle snapshot。
 - `task_completed` 后首个 SSE snapshot 已包含 task result、conversation message、receipt 和 card。
 - SSE reconnect 和 disconnect cleanup。
 - static file allowlist。
@@ -1075,6 +1083,7 @@ npm run example:rpc-task-console
 - 未配置 `card_type` 的 task 不创建 card。
 - task retry、tool call 上限、stop、replace 行为符合 spec。
 - 浏览器重连后拿到最新 snapshot。
+- 使用真实 child Pi process、实际 MCP extension 装载和真实 MCP server 做一轮端到端验证；如本地环境不可用，记录未验证原因和替代验证证据。
 - 卡片收起、最大化、侧栏左右吸附和 3 列优先布局符合 spec。
 - 375px 左右移动端宽度无横向滚动。
 - 输出目录写入 snapshot、logs、RPC events、stderr、conversation messages。
