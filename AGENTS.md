@@ -7,11 +7,14 @@ When `.codex-harness.toml` is enabled and `mode = "control-plane"`, the harness 
 If `.codex-harness.toml` sets `allow_main_agent_code_edits = false`:
 
 - The main session MUST NOT edit business code, test code, build/config code, generated code, or examples.
-- The main session MAY perform only control-plane work: read-only inspection, requirement alignment, planning, subagent delegation, review, test command dispatch, confirmed structural or semantic changes to spec/plan/ledger, and routine factual status updates to already-confirmed plan/ledger files.
+- The main session MAY perform only control-plane work: read-only inspection, requirement alignment, planning, subagent delegation, review, test command dispatch, confirmed structural or semantic changes to specs, plan/ledger updates with traceable rationale, and routine factual status updates to already-confirmed plan/ledger files.
+- During implementation, the main session may adjust plans and ledgers when it discovers omissions, file-boundary corrections, task status changes, delegation facts, verification evidence, or risks. These plan/ledger changes do not require interrupting the user, but they MUST be recorded and summarized in the final report.
+- The main session MUST interrupt for user confirmation before changing specs or performing high-risk operations, including edits outside the project/workspace, destructive git/filesystem operations, escalation that writes outside approved roots, or changes to global agent/harness/hook configuration unless the user explicitly requested that change in the current turn.
 - "Continue working", "do meaningful non-overlapping work", or "carry the work through implementation" MUST be interpreted as control-plane work only.
 - If a subagent times out, fails, or leaves partial code changes, the main session MUST NOT take over implementation. It may stop the subagent, record evidence, review diffs, ask the user, or delegate a new subagent.
 - When a subagent reaches a final state (`completed`, `failed`, `shutdown`, or no longer needed), the main session MUST collect its final report/status, preserve relevant evidence in the ledger when applicable, then close the subagent process with the agent close tool. Do not leave completed subagents running.
 - Subagents may implement only within explicitly delegated write scopes and MUST NOT commit unless the user explicitly asks.
+- When delegating, the main session MUST state the subagent's task, exact write scope, scope boundaries, no-commit rule, no-revert rule, required validation commands, and final report requirements. The final report should include completed work, changed files, validation results, and risks/open issues.
 
 ## Conversational Style
 

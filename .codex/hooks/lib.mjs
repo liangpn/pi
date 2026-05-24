@@ -57,16 +57,6 @@ export function outputSystemMessage(systemMessage) {
   process.stdout.write(JSON.stringify({ systemMessage }));
 }
 
-export function blockPreTool(reason) {
-  process.stdout.write(JSON.stringify({
-    hookSpecificOutput: {
-      hookEventName: "PreToolUse",
-      permissionDecision: "deny",
-      permissionDecisionReason: reason
-    }
-  }));
-}
-
 export function denyPermission(message) {
   process.stdout.write(JSON.stringify({
     hookSpecificOutput: {
@@ -103,18 +93,4 @@ export function isDangerousCommand(command) {
     /\brm\s+-rf\s+(\/|\*|\.|\.\.)/,
     /\bsudo\s+rm\b/
   ].some((pattern) => pattern.test(command));
-}
-
-export function textHasReportShape(text) {
-  if (!text) {
-    return false;
-  }
-  const lower = text.toLowerCase();
-  const checks = [
-    /完成|summary|done|result|结论/.test(lower),
-    /文件|changed|paths?|修改/.test(lower),
-    /验证|test|check|verification|未运行/.test(lower),
-    /风险|risk|open|未决|block/.test(lower)
-  ];
-  return checks.filter(Boolean).length >= 3;
 }

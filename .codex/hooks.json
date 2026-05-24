@@ -13,43 +13,6 @@
         ]
       }
     ],
-    "SubagentStart": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "node \"$(git rev-parse --show-toplevel)/.codex/hooks/subagent-start.mjs\"",
-            "timeout": 10,
-            "statusMessage": "Adding subagent harness context"
-          }
-        ]
-      }
-    ],
-    "SubagentStop": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "node \"$(git rev-parse --show-toplevel)/.codex/hooks/subagent-stop.mjs\"",
-            "timeout": 10,
-            "statusMessage": "Checking subagent report"
-          }
-        ]
-      }
-    ],
-    "PreToolUse": [
-      {
-        "matcher": "Bash|apply_patch|Edit|Write",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "node \"$(git rev-parse --show-toplevel)/.codex/hooks/pre-tool-use.mjs\"",
-            "timeout": 10,
-            "statusMessage": "Checking harness tool policy"
-          }
-        ]
-      }
-    ],
     "PermissionRequest": [
       {
         "matcher": "Bash|apply_patch|Edit|Write",
