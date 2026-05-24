@@ -3,6 +3,8 @@ import { isAbsolute, join } from "node:path";
 import { prepareChildSettingsSync } from "./child-settings.js";
 import { loadRuntimeConfig, type RuntimeConfig } from "./runtime-config.js";
 
+export const PI_DEMO_TASK_ALLOWED_TOOLS_ENV = "PI_DEMO_TASK_ALLOWED_TOOLS";
+
 export interface RpcTaskConsoleEnv {
 	readonly exampleDir: string;
 	readonly port: number;

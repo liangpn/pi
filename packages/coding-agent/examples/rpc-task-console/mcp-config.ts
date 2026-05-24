@@ -1,4 +1,5 @@
 import { readFileSync } from "node:fs";
+import { PI_DEMO_TASK_ALLOWED_TOOLS_ENV } from "./env.js";
 
 export interface RpcTaskConsoleMcpConfig {
 	readonly servers: Record<string, McpStreamableHttpServerConfig>;
@@ -28,7 +29,7 @@ export function loadMcpConfig(path: string, env: NodeJS.ProcessEnv = process.env
 		throw new Error("MCP config must be a JSON object");
 	}
 	const servers = parseServers(parsed.servers, env);
-	const tools = parseTools(parsed.tools, servers);
+	const tools = filterToolMappings(parseTools(parsed.tools, servers), readTaskAllowedTools(env));
 	return { servers, tools };
 }
 
@@ -130,6 +131,34 @@ function expandEnvTemplates(value: string, env: NodeJS.ProcessEnv): string {
 	return value.replace(/\$\{([A-Z0-9_]+)\}/g, (_match, key: string) => env[key] ?? "");
 }
 
+function readTaskAllowedTools(env: NodeJS.ProcessEnv): Set<string> | undefined {
+	const rawValue = env[PI_DEMO_TASK_ALLOWED_TOOLS_ENV];
+	if (!rawValue || rawValue.trim().length === 0) {
+		return undefined;
+	}
+	let parsed: unknown;
+	try {
+		parsed = JSON.parse(rawValue);
+	} catch (error: unknown) {
+		throw new Error(`Invalid ${PI_DEMO_TASK_ALLOWED_TOOLS_ENV}: ${formatError(error)}`);
+	}
+	if (!Array.isArray(parsed) || parsed.some((item) => typeof item !== "string")) {
+		throw new Error(`Invalid ${PI_DEMO_TASK_ALLOWED_TOOLS_ENV}: expected a JSON array of strings`);
+	}
+	return new Set(parsed);
+}
+
+function filterToolMappings(tools: readonly McpToolMapping[], allowedTools: Set<string> | undefined): McpToolMapping[] {
+	if (!allowedTools) {
+		return [...tools];
+	}
+	return tools.filter((tool) => allowedTools.has(tool.name));
+}
+
 function isJsonObject(value: unknown): value is JsonObject {
 	return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function formatError(error: unknown): string {
+	return error instanceof Error ? error.message : String(error);
 }

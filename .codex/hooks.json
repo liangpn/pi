@@ -25,18 +25,7 @@
           }
         ]
       }
-    ],
-    "Stop": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "node \"$(git rev-parse --show-toplevel)/.codex/hooks/stop.mjs\"",
-            "timeout": 10,
-            "statusMessage": "Checking harness completion"
-          }
-        ]
-      }
+
     ]
   }
 }

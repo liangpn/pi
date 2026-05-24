@@ -794,13 +794,57 @@ describe("rpc task console MCP config", () => {
 			rmSync(dir, { recursive: true, force: true });
 		}
 	});
+
+	test("filters MCP tools using the task-scoped allowlist env", () => {
+		const dir = mkdtempSync(join(tmpdir(), "rpc-task-console-"));
+		try {
+			const configPath = join(dir, "mcp.config.json");
+			writeFileSync(
+				configPath,
+				JSON.stringify(
+					{
+						servers: {
+							caseTools: {
+								transport: "streamable-http",
+								url: "http://127.0.0.1:9001/mcp",
+							},
+						},
+						tools: [
+							{
+								name: "panel-operate",
+								server: "caseTools",
+								mcpTool: "panel-operate",
+								description: "Operate panel",
+							},
+							{
+								name: "background-check",
+								server: "caseTools",
+								mcpTool: "background-check",
+								description: "Run background check",
+							},
+						],
+					},
+					null,
+					2,
+				),
+			);
+
+			const config = loadMcpConfig(configPath, {
+				PI_DEMO_TASK_ALLOWED_TOOLS: JSON.stringify(["panel-operate", "read"]),
+			});
+
+			expect(config.tools.map((tool) => tool.name)).toEqual(["panel-operate"]);
+		} finally {
+			rmSync(dir, { recursive: true, force: true });
+		}
+	});
 });
 
 describe("rpc task console MCP Streamable HTTP client", () => {
 	test("initializes and calls tools over Streamable HTTP", async () => {
 		const received: Array<{ readonly method: string; readonly sessionId?: string; readonly accept?: string }> = [];
 		const server = createServer((request, response) => {
-			void handleFakeMcpRequest(request, response, received, false);
+			void handleFakeMcpRequest(request, response, received, { mode: "json" });
 		});
 		const baseUrl = await listen(server);
 		try {
@@ -815,6 +859,10 @@ describe("rpc task console MCP Streamable HTTP client", () => {
 			const result = await client.callTool("echo", { text: "hello" }, undefined);
 
 			expect(result.content[0]).toEqual({ type: "text", text: "called echo" });
+			expect(result.structuredContent).toEqual({
+				tool: "echo",
+				echoedArguments: { text: "hello" },
+			});
 			expect(received).toEqual([
 				{ method: "initialize", sessionId: undefined, accept: "application/json, text/event-stream" },
 				{
@@ -832,7 +880,7 @@ describe("rpc task console MCP Streamable HTTP client", () => {
 	test("reads a tools/call result from a Streamable HTTP SSE response", async () => {
 		const received: Array<{ readonly method: string; readonly sessionId?: string; readonly accept?: string }> = [];
 		const server = createServer((request, response) => {
-			void handleFakeMcpRequest(request, response, received, true);
+			void handleFakeMcpRequest(request, response, received, { mode: "sse" });
 		});
 		const baseUrl = await listen(server);
 		try {
@@ -847,7 +895,73 @@ describe("rpc task console MCP Streamable HTTP client", () => {
 			const result = await client.callTool("echo", { text: "hello" }, undefined);
 
 			expect(result.content[0]).toEqual({ type: "text", text: "called echo" });
+			expect(result.structuredContent).toEqual({
+				tool: "echo",
+				echoedArguments: { text: "hello" },
+			});
 			expect(received.map((item) => item.method)).toEqual(["initialize", "notifications/initialized", "tools/call"]);
+		} finally {
+			await closeServer(server);
+		}
+	});
+
+	test("surfaces HTTP failures as tool errors instead of crashing", async () => {
+		const server = createServer((request, response) => {
+			void handleFakeMcpRequest(request, response, [], { mode: "http-error" });
+		});
+		const baseUrl = await listen(server);
+		try {
+			const client = new McpStreamableHttpClient({
+				server: {
+					transport: "streamable-http",
+					url: `${baseUrl}/mcp`,
+					headers: {},
+				},
+			});
+
+			await expect(client.callTool("echo", { text: "hello" }, undefined)).rejects.toThrow(/tool "echo".*HTTP 502/i);
+		} finally {
+			await closeServer(server);
+		}
+	});
+
+	test("surfaces JSON-RPC failures as tool errors instead of crashing", async () => {
+		const server = createServer((request, response) => {
+			void handleFakeMcpRequest(request, response, [], { mode: "jsonrpc-error" });
+		});
+		const baseUrl = await listen(server);
+		try {
+			const client = new McpStreamableHttpClient({
+				server: {
+					transport: "streamable-http",
+					url: `${baseUrl}/mcp`,
+					headers: {},
+				},
+			});
+
+			await expect(client.callTool("echo", { text: "hello" }, undefined)).rejects.toThrow(
+				/tool "echo".*JSON-RPC.*tool exploded/i,
+			);
+		} finally {
+			await closeServer(server);
+		}
+	});
+
+	test("surfaces protocol mismatch responses as tool errors instead of crashing", async () => {
+		const server = createServer((request, response) => {
+			void handleFakeMcpRequest(request, response, [], { mode: "protocol-mismatch" });
+		});
+		const baseUrl = await listen(server);
+		try {
+			const client = new McpStreamableHttpClient({
+				server: {
+					transport: "streamable-http",
+					url: `${baseUrl}/mcp`,
+					headers: {},
+				},
+			});
+
+			await expect(client.callTool("echo", { text: "hello" }, undefined)).rejects.toThrow(/tool "echo".*protocol/i);
 		} finally {
 			await closeServer(server);
 		}
@@ -863,6 +977,57 @@ describe("rpc task console TaskStore", () => {
 		expect(snapshot.run.steps).toHaveLength(2);
 		expect(snapshot.run.steps.flatMap((step) => step.tasks)).toHaveLength(5);
 		expect(snapshot.run.steps[0]?.tasks[0]?.status).toBe("loading");
+		expect(snapshot.conversationMessages).toEqual([]);
+	});
+
+	test("resets to an idle snapshot for the provided selected steps and clears in-memory state", () => {
+		const defaultSteps = createInitialSteps();
+		const replacementSteps: PlanStep[] = [
+			{
+				id: "step-selected",
+				title: "选中步骤",
+				tasks: [
+					{
+						id: "task-selected",
+						title: "选中任务",
+						description: "done",
+						tools: [],
+						skills: [],
+						card_type: "text",
+						data_structure: [{ field: "text", type: "string", required: true }],
+					},
+				],
+			},
+		];
+		const store = TaskStore.createIdle(defaultSteps);
+		const run = store.startRun("run-1", "demo instruction", 100, replacementSteps);
+
+		store.apply({
+			type: "task_completed",
+			runId: run.id,
+			stepId: "step-selected",
+			taskId: "task-selected",
+			result: {
+				status: "complete",
+				content: "done",
+				data: { text: "done" },
+			},
+			time: 101,
+		});
+
+		store.reset(102, replacementSteps);
+
+		const snapshot = store.getSnapshot();
+		expect(snapshot.run.id).toBe("idle");
+		expect(snapshot.run.status).toBe("idle");
+		expect(snapshot.run.userInstruction).toBe("");
+		expect(snapshot.run.steps).toHaveLength(1);
+		expect(snapshot.run.steps[0]?.id).toBe("step-selected");
+		expect(snapshot.run.steps[0]?.tasks[0]?.id).toBe("task-selected");
+		expect(snapshot.run.steps[0]?.tasks[0]?.status).toBe("loading");
+		expect(snapshot.cards).toEqual([]);
+		expect(snapshot.logs).toEqual([]);
+		expect(snapshot.receipts).toEqual([]);
 		expect(snapshot.conversationMessages).toEqual([]);
 	});
 
@@ -1126,6 +1291,46 @@ describe("rpc task console TaskStore", () => {
 		});
 	});
 
+	test("projects run-level stopping and replacement metadata until cleanup completes", () => {
+		const plan: PlanStep[] = [
+			{
+				id: "step-test",
+				title: "测试步骤",
+				tasks: [{ id: "task-test", title: "测试任务", description: "done", tools: [], skills: [] }],
+			},
+		];
+		const store = TaskStore.createIdle(plan);
+		const run = store.startRun("run-1", "old instruction", 100);
+
+		store.markRunStopping(run.id, "replaced_by_new_instruction", 101, "new instruction");
+		store.apply({
+			type: "task_stopped",
+			runId: run.id,
+			stepId: "step-test",
+			taskId: "task-test",
+			stopped: {
+				status: "stopped",
+				reason: "replaced_by_new_instruction",
+				message: "任务被新指令替换",
+				detail: "received replacement while child was running",
+			},
+			time: 102,
+		});
+
+		const stoppingSnapshot = store.getSnapshot();
+		expect(stoppingSnapshot.run.status).toBe("stopping");
+		expect(stoppingSnapshot.run.stopReason).toBe("replaced_by_new_instruction");
+		expect(stoppingSnapshot.run.replacementInstruction).toBe("new instruction");
+
+		store.markRunStopped(run.id, 103);
+
+		const stoppedSnapshot = store.getSnapshot();
+		expect(stoppedSnapshot.run.status).toBe("stopped");
+		expect(stoppedSnapshot.run.finishedAt).toBe(103);
+		expect(stoppedSnapshot.run.stopReason).toBe("replaced_by_new_instruction");
+		expect(stoppedSnapshot.run.replacementInstruction).toBe("new instruction");
+	});
+
 	test("does not change run finishedAt after a terminal run receives a late log", () => {
 		const store = TaskStore.createIdle([
 			{
@@ -1206,6 +1411,14 @@ describe("rpc task console TaskStore", () => {
 		store.apply({ type: "task_started", runId: "run-1", stepId: "step-1", taskId: "task-1", time: 201 });
 
 		expect(store.getSnapshot().run.steps[0]?.tasks[0]?.status).toBe("loading");
+		expect(
+			store
+				.getSnapshot()
+				.logs.some(
+					(log) =>
+						log.type === "diagnostic" && log.message.includes("run-1") && log.message.includes("task_started"),
+				),
+		).toBe(true);
 	});
 });
 
@@ -1408,6 +1621,11 @@ describe("rpc task console TaskDispatcher", () => {
 			command: "pi",
 			args: ["--mode", "rpc", "--no-session"],
 			env: process.env,
+			runtimeConfig: {
+				...DEFAULT_RUNTIME_CONFIG,
+				stop_steer_timeout_ms: 0,
+				stop_abort_timeout_ms: 0,
+			},
 			now: createClock(101),
 		});
 
@@ -1444,13 +1662,29 @@ describe("rpc task console TaskDispatcher", () => {
 			steps: plan,
 			store,
 			childFactory: (options) => {
-				const child = new FakeChildAgentProcess(options, []);
+				const child = new FakeChildAgentProcess(options, [], {
+					onKill: (runningChild) => {
+						queueMicrotask(() => {
+							runningChild.emit({
+								type: "process_close",
+								exitCode: 143,
+								signal: "SIGTERM",
+								stderrTail: "stopped child",
+							});
+						});
+					},
+				});
 				children.push(child);
 				return child;
 			},
 			command: "pi",
 			args: ["--mode", "rpc", "--no-session"],
 			env: process.env,
+			runtimeConfig: {
+				...DEFAULT_RUNTIME_CONFIG,
+				stop_steer_timeout_ms: 0,
+				stop_abort_timeout_ms: 0,
+			},
 			now: createClock(101),
 		});
 
@@ -1459,7 +1693,12 @@ describe("rpc task console TaskDispatcher", () => {
 		dispatcher.stop("user_stopped");
 		await running;
 
-		expect(children.every((child) => child.abortCount === 1 && child.killSignals.includes("SIGTERM"))).toBe(true);
+		expect(
+			children.every(
+				(child) =>
+					child.steerMessages.length === 1 && child.abortCount === 1 && child.killSignals.includes("SIGTERM"),
+			),
+		).toBe(true);
 		expect(store.getSnapshot().run.status).toBe("stopped");
 		expect(store.getSnapshot().run.steps[0]?.tasks.map((task) => task.status)).toEqual(["stopped", "stopped"]);
 	});
@@ -1510,6 +1749,11 @@ describe("rpc task console TaskDispatcher", () => {
 			command: "pi",
 			args: ["--mode", "rpc", "--no-session"],
 			env: process.env,
+			runtimeConfig: {
+				...DEFAULT_RUNTIME_CONFIG,
+				stop_steer_timeout_ms: 0,
+				stop_abort_timeout_ms: 0,
+			},
 			now: createClock(101),
 		});
 
@@ -1529,7 +1773,7 @@ describe("rpc task console TaskDispatcher", () => {
 		expect(task?.attempts).toHaveLength(1);
 		expect(task?.attempts[0]).toMatchObject({
 			attempt: 1,
-			agentRunId: "fake-task-test",
+			agentRunId: expect.stringContaining("fake-task-test"),
 			status: "complete",
 			agent: {
 				processId: 1234,
@@ -1578,6 +1822,11 @@ describe("rpc task console TaskDispatcher", () => {
 			command: "pi",
 			args: ["--mode", "rpc", "--no-session"],
 			env: process.env,
+			runtimeConfig: {
+				...DEFAULT_RUNTIME_CONFIG,
+				stop_steer_timeout_ms: 0,
+				stop_abort_timeout_ms: 0,
+			},
 			now: createClock(101),
 		});
 
@@ -1598,7 +1847,7 @@ describe("rpc task console TaskDispatcher", () => {
 		expect(task?.attempts).toHaveLength(1);
 		expect(task?.attempts[0]).toMatchObject({
 			attempt: 1,
-			agentRunId: "fake-task-test",
+			agentRunId: expect.stringContaining("fake-task-test"),
 			status: "stopped",
 			process: {
 				closeCode: 143,
@@ -1610,6 +1859,76 @@ describe("rpc task console TaskDispatcher", () => {
 				detail: expect.stringContaining("新指令"),
 			},
 		});
+	});
+
+	test("records stop timeout diagnostics and keeps stopped tasks out of retry flow", async () => {
+		const plan: PlanStep[] = [
+			{
+				id: "step-test",
+				title: "测试步骤",
+				tasks: [
+					{
+						id: "task-test",
+						title: "测试任务",
+						description: "pending",
+						tools: [],
+						skills: [],
+						retry: {
+							max_attempts: 3,
+							base_delay_ms: 0,
+							retry_on: ["timeout", "process_error"],
+						},
+					},
+				],
+			},
+		];
+		const children: FakeChildAgentProcess[] = [];
+		const store = TaskStore.createIdle(plan);
+		const run = store.startRun("run-1", "demo", 100);
+		const dispatcher = new TaskDispatcher({
+			runId: run.id,
+			userInstruction: run.userInstruction,
+			steps: plan,
+			store,
+			childFactory: (options) => {
+				const child = new FakeChildAgentProcess(options, []);
+				children.push(child);
+				return child;
+			},
+			command: "pi",
+			args: ["--mode", "rpc", "--no-session"],
+			env: process.env,
+			runtimeConfig: {
+				...DEFAULT_RUNTIME_CONFIG,
+				stop_steer_timeout_ms: 0,
+				stop_abort_timeout_ms: 0,
+			},
+			now: createClock(101),
+		});
+
+		const running = dispatcher.run();
+		await waitUntil(() => children.length === 1);
+		dispatcher.stop("user_stopped");
+		await running;
+
+		const snapshot = store.getSnapshot();
+		const task = snapshot.run.steps[0]?.tasks[0];
+		expect(children[0]?.steerMessages).toHaveLength(1);
+		expect(children[0]?.abortCount).toBe(1);
+		expect(children[0]?.killSignals).toEqual(["SIGTERM"]);
+		expect(task?.status).toBe("stopped");
+		expect(task?.stopped?.reason).toBe("timeout_after_stop");
+		expect(task?.attempts).toHaveLength(1);
+		expect(snapshot.run.status).toBe("stopped");
+		expect(
+			snapshot.logs.some((log) => log.type === "diagnostic" && log.message.includes("等待 steer 停止超时")),
+		).toBe(true);
+		expect(
+			snapshot.logs.some((log) => log.type === "diagnostic" && log.message.includes("等待 abort 停止超时")),
+		).toBe(true);
+		expect(snapshot.logs.some((log) => log.type === "diagnostic" && log.message.includes("timeout_after_stop"))).toBe(
+			true,
+		);
 	});
 
 	test("marks task running on child_spawned and records a task log before completion", async () => {
@@ -1636,6 +1955,7 @@ describe("rpc task console TaskDispatcher", () => {
 			command: "pi",
 			args: ["--mode", "rpc", "--no-session"],
 			env: process.env,
+			runtimeConfig: DEFAULT_RUNTIME_CONFIG,
 			now: createClock(101),
 		});
 
@@ -1677,6 +1997,7 @@ describe("rpc task console TaskDispatcher", () => {
 			command: "pi",
 			args: ["--mode", "rpc", "--no-session"],
 			env: process.env,
+			runtimeConfig: DEFAULT_RUNTIME_CONFIG,
 			now: createClock(101),
 		});
 
@@ -1710,6 +2031,7 @@ describe("rpc task console TaskDispatcher", () => {
 			command: "pi",
 			args: ["--mode", "rpc", "--no-session"],
 			env: process.env,
+			runtimeConfig: DEFAULT_RUNTIME_CONFIG,
 			now: createClock(101),
 		});
 
@@ -1800,6 +2122,7 @@ describe("rpc task console TaskDispatcher", () => {
 			command: "pi",
 			args: ["--mode", "rpc", "--no-session"],
 			env: process.env,
+			runtimeConfig: DEFAULT_RUNTIME_CONFIG,
 			now: createClock(101),
 		});
 
@@ -1851,6 +2174,7 @@ describe("rpc task console TaskDispatcher", () => {
 			command: "pi",
 			args: ["--mode", "rpc", "--no-session"],
 			env: process.env,
+			runtimeConfig: DEFAULT_RUNTIME_CONFIG,
 			now: createClock(101),
 		});
 
@@ -1894,6 +2218,7 @@ describe("rpc task console TaskDispatcher", () => {
 			command: "pi",
 			args: ["--mode", "rpc", "--no-session"],
 			env: process.env,
+			runtimeConfig: DEFAULT_RUNTIME_CONFIG,
 			now: createClock(101),
 		});
 
@@ -1947,6 +2272,7 @@ describe("rpc task console TaskDispatcher", () => {
 			command: "pi",
 			args: ["--mode", "rpc", "--no-session"],
 			env: process.env,
+			runtimeConfig: DEFAULT_RUNTIME_CONFIG,
 			now: createClock(101),
 		});
 
@@ -1982,12 +2308,87 @@ describe("rpc task console TaskDispatcher", () => {
 			command: "pi",
 			args: ["--mode", "rpc", "--no-session"],
 			env: process.env,
+			runtimeConfig: DEFAULT_RUNTIME_CONFIG,
 			now: createClock(101),
 		});
 
 		await dispatcher.run();
 
 		expect(store.getSnapshot().run.steps[0]?.tasks[0]?.error?.code).toBe("process_closed_before_agent_end");
+	});
+
+	test("passes a task-scoped --tools allowlist and MCP allowlist env to each child", async () => {
+		const plan: PlanStep[] = [
+			{
+				id: "step-test",
+				title: "测试步骤",
+				tasks: [
+					{
+						id: "task-a",
+						title: "任务 A",
+						description: "pending",
+						tools: ["panel-operate", "read"],
+						skills: [],
+					},
+					{
+						id: "task-b",
+						title: "任务 B",
+						description: "pending",
+						tools: ["background-check"],
+						skills: [],
+					},
+				],
+			},
+		];
+		const store = TaskStore.createIdle(plan);
+		const run = store.startRun("run-1", "demo", 100);
+		const launches: ChildAgentProcessFactoryOptions[] = [];
+		const dispatcher = new TaskDispatcher({
+			runId: run.id,
+			userInstruction: run.userInstruction,
+			steps: plan,
+			store,
+			childFactory: (options) => {
+				launches.push(options);
+				return new FakeChildAgentProcess(options, [], {
+					onPrompt: (child) => {
+						queueMicrotask(() => {
+							child.emit({
+								type: "message_end",
+								message: createAssistantMessage(JSON.stringify({ content: `${options.taskId} done` })),
+							});
+							child.emit({ type: "agent_end", messages: [], willRetry: false });
+							child.emit({
+								type: "process_close",
+								exitCode: 0,
+								signal: null,
+								stderrTail: `${options.taskId} stderr`,
+							});
+						});
+					},
+				});
+			},
+			command: "pi",
+			args: ["--mode", "rpc", "--no-session"],
+			env: {
+				...process.env,
+				PI_DEMO_MCP_CONFIG_PATH: "/tmp/mcp.config.json",
+			},
+			runtimeConfig: {
+				...DEFAULT_RUNTIME_CONFIG,
+				concurrency_limit: 1,
+				minimal_system_tools: ["ls", "read"],
+			},
+			now: createClock(100),
+		});
+
+		await dispatcher.run();
+
+		expect(launches).toHaveLength(2);
+		expect(launches[0]?.args).toEqual(["--mode", "rpc", "--no-session", "--tools", "panel-operate,read,ls"]);
+		expect(launches[0]?.env.PI_DEMO_TASK_ALLOWED_TOOLS).toBe(JSON.stringify(["panel-operate", "read", "ls"]));
+		expect(launches[1]?.args).toEqual(["--mode", "rpc", "--no-session", "--tools", "background-check,ls,read"]);
+		expect(launches[1]?.env.PI_DEMO_TASK_ALLOWED_TOOLS).toBe(JSON.stringify(["background-check", "ls", "read"]));
 	});
 });
 
@@ -2096,8 +2497,9 @@ function createResultPayloadForTask(taskId: string): { readonly content: string;
 
 class FakeChildAgentProcess implements ChildAgentProcessLike {
 	readonly agentRunId: string;
-	readonly processId = 1234;
+	readonly processId: number;
 	readonly killSignals: NodeJS.Signals[] = [];
+	readonly steerMessages: string[] = [];
 	abortCount = 0;
 	private readonly options: ChildAgentProcessFactoryOptions;
 	private readonly startedTaskIds: string[];
@@ -2108,6 +2510,7 @@ class FakeChildAgentProcess implements ChildAgentProcessLike {
 		this.startedTaskIds = startedTaskIds;
 		this.hooks = hooks;
 		this.agentRunId = `fake-${options.taskId}`;
+		this.processId = hooks?.processId ?? 1234;
 	}
 
 	start(): void {
@@ -2122,11 +2525,14 @@ class FakeChildAgentProcess implements ChildAgentProcessLike {
 	}
 
 	sendSteer(_message: string): string {
+		this.steerMessages.push(_message);
+		this.hooks?.onSteer?.(this, _message);
 		return `steer-${this.options.taskId}`;
 	}
 
 	sendAbort(): string {
 		this.abortCount += 1;
+		this.hooks?.onAbort?.(this);
 		return `abort-${this.options.taskId}`;
 	}
 
@@ -2141,8 +2547,11 @@ class FakeChildAgentProcess implements ChildAgentProcessLike {
 }
 
 interface FakeChildHooks {
+	readonly processId?: number;
 	readonly onStart?: (child: FakeChildAgentProcess) => void;
 	readonly onPrompt?: (child: FakeChildAgentProcess) => void;
+	readonly onSteer?: (child: FakeChildAgentProcess, message: string) => void;
+	readonly onAbort?: (child: FakeChildAgentProcess) => void;
 	readonly onKill?: (child: FakeChildAgentProcess, signal: NodeJS.Signals) => void;
 }
 
@@ -2254,10 +2663,38 @@ describe("rpc task console RunManager", () => {
 
 	test("replaces a running instruction without letting stale events mutate the new run", async () => {
 		const children: FakeChildAgentProcess[] = [];
+		const plan: PlanStep[] = [
+			{
+				id: "step-test",
+				title: "测试步骤",
+				tasks: [{ id: "task-test", title: "测试任务", description: "pending", tools: [], skills: [] }],
+			},
+		];
 		const manager = new RunManager({
-			demoEnv: createDemoEnv(),
+			steps: plan,
+			demoEnv: createDemoEnv(undefined, {
+				runtimeConfig: {
+					...DEFAULT_RUNTIME_CONFIG,
+					concurrency_limit: 1,
+					stop_steer_timeout_ms: 0,
+					stop_abort_timeout_ms: 0,
+				},
+			}),
 			childFactory: (options) => {
-				const child = new FakeChildAgentProcess(options, []);
+				const child = new FakeChildAgentProcess(options, [], {
+					onKill: (runningChild) => {
+						if (children.length === 1) {
+							queueMicrotask(() => {
+								runningChild.emit({
+									type: "process_close",
+									exitCode: 143,
+									signal: "SIGTERM",
+									stderrTail: "old run killed",
+								});
+							});
+						}
+					},
+				});
 				children.push(child);
 				return child;
 			},
@@ -2265,15 +2702,68 @@ describe("rpc task console RunManager", () => {
 		});
 
 		const oldRun = manager.start("old instruction");
-		await waitUntil(() => children.length === 3);
+		await waitUntil(() => children.length === 1);
 		const newRun = manager.start("new instruction");
-		children[0]?.emit({ type: "agent_end", messages: [], willRetry: false });
 
+		const stoppingSnapshot = manager.getSnapshot();
+		expect(stoppingSnapshot.run.id).toBe(oldRun.id);
+		expect(stoppingSnapshot.run.status).toBe("stopping");
+		expect(stoppingSnapshot.run.stopReason).toBe("replaced_by_new_instruction");
+		expect(stoppingSnapshot.run.replacementInstruction).toBe("new instruction");
+
+		await waitUntil(() => children.length === 2 && manager.getSnapshot().run.id === newRun.id);
 		expect(newRun.id).not.toBe(oldRun.id);
-		expect(manager.getSnapshot().run.id).toBe(newRun.id);
 		expect(manager.getSnapshot().run.userInstruction).toBe("new instruction");
 		expect(manager.getSnapshot().run.steps[0]?.tasks[0]?.status).toBe("running");
-		expect(manager.getSnapshot().cards.some((card) => card.taskId === "task-1")).toBe(false);
+		expect(manager.getSnapshot().run.steps[0]?.tasks[0]?.process).toBeUndefined();
+
+		children[0]?.emit({
+			type: "message_update",
+			message: createAssistantMessage("late old partial"),
+			assistantMessageEvent: { type: "text_delta", delta: "late old partial" },
+		});
+		children[0]?.emit({ type: "agent_end", messages: [], willRetry: false });
+		children[0]?.emit({
+			type: "process_close",
+			exitCode: 143,
+			signal: "SIGTERM",
+			stderrTail: "late old close",
+		});
+
+		const afterStaleEvents = manager.getSnapshot();
+		expect(afterStaleEvents.run.id).toBe(newRun.id);
+		expect(afterStaleEvents.run.steps[0]?.tasks[0]?.status).toBe("running");
+		expect(afterStaleEvents.run.steps[0]?.tasks[0]?.process).toBeUndefined();
+		expect(
+			afterStaleEvents.logs.some(
+				(log) =>
+					log.type === "diagnostic" && log.message.includes("message_update") && log.message.includes(oldRun.id),
+			),
+		).toBe(true);
+		expect(
+			afterStaleEvents.logs.some(
+				(log) => log.type === "diagnostic" && log.message.includes("agent_end") && log.message.includes(oldRun.id),
+			),
+		).toBe(true);
+		expect(
+			afterStaleEvents.logs.some(
+				(log) =>
+					log.type === "diagnostic" && log.message.includes("process_close") && log.message.includes(oldRun.id),
+			),
+		).toBe(true);
+
+		children[1]?.emit({
+			type: "message_end",
+			message: createAssistantMessage(JSON.stringify({ content: "new run done" })),
+		});
+		children[1]?.emit({ type: "agent_end", messages: [], willRetry: false });
+		children[1]?.emit({
+			type: "process_close",
+			exitCode: 0,
+			signal: null,
+			stderrTail: "new run close",
+		});
+		await manager.waitForIdle();
 	});
 
 	test("resets to idle state", async () => {
@@ -2288,17 +2778,372 @@ describe("rpc task console RunManager", () => {
 
 		expect(manager.getSnapshot().run.status).toBe("idle");
 		expect(manager.getSnapshot().cards).toEqual([]);
-		expect(manager.getSnapshot().receipts[0]?.message).toBe("已重置任务骨架");
+		expect(manager.getSnapshot().logs).toEqual([]);
+		expect(manager.getSnapshot().receipts).toEqual([]);
+		expect(manager.getSnapshot().conversationMessages).toEqual([]);
+	});
+
+	test("uses route-selected steps as the source of truth for start, replace, and reset snapshots", async () => {
+		const oldSteps: PlanStep[] = [
+			{
+				id: "step-old",
+				title: "旧步骤",
+				tasks: [{ id: "task-old", title: "旧任务", description: "pending", tools: [], skills: [] }],
+			},
+		];
+		const newSteps: PlanStep[] = [
+			{
+				id: "step-new",
+				title: "新步骤",
+				tasks: [
+					{
+						id: "task-new",
+						title: "新任务",
+						description: "done",
+						tools: [],
+						skills: [],
+						card_type: "text",
+						data_structure: [{ field: "text", type: "string", required: true }],
+					},
+				],
+			},
+		];
+		const children: FakeChildAgentProcess[] = [];
+		const manager = new RunManager({
+			steps: createInitialSteps(),
+			demoEnv: createDemoEnv(undefined, {
+				runtimeConfig: {
+					...DEFAULT_RUNTIME_CONFIG,
+					concurrency_limit: 1,
+					stop_steer_timeout_ms: 0,
+					stop_abort_timeout_ms: 0,
+				},
+			}),
+			childFactory: (options) => {
+				const child = new FakeChildAgentProcess(options, [], {
+					onKill: (runningChild) => {
+						if (children.length === 1) {
+							queueMicrotask(() => {
+								runningChild.emit({
+									type: "process_close",
+									exitCode: 143,
+									signal: "SIGTERM",
+									stderrTail: "old run killed",
+								});
+							});
+						}
+					},
+					onPrompt: (runningChild) => {
+						if (options.taskId !== "task-new") {
+							return;
+						}
+						queueMicrotask(() => {
+							runningChild.emit({
+								type: "message_end",
+								message: createAssistantMessage(
+									JSON.stringify({ content: "new run done", data: { text: "ok" } }),
+								),
+							});
+							runningChild.emit({ type: "agent_end", messages: [], willRetry: false });
+							runningChild.emit({
+								type: "process_close",
+								exitCode: 0,
+								signal: null,
+								stderrTail: "new run close",
+							});
+						});
+					},
+				});
+				children.push(child);
+				return child;
+			},
+			now: createClock(100),
+		});
+
+		manager.start("old instruction", oldSteps);
+		await waitUntil(() => children.length === 1);
+		expect(manager.getSnapshot().run.steps.map((step) => step.id)).toEqual(["step-old"]);
+
+		manager.start("new instruction", newSteps);
+		await waitUntil(() => children.length === 2 && manager.getSnapshot().run.id !== "run-100-1");
+		expect(manager.getSnapshot().run.userInstruction).toBe("new instruction");
+		expect(manager.getSnapshot().run.steps.map((step) => step.id)).toEqual(["step-new"]);
+
+		await manager.waitForIdle();
+		manager.reset();
+
+		const snapshot = manager.getSnapshot();
+		expect(snapshot.run.status).toBe("idle");
+		expect(snapshot.run.steps.map((step) => step.id)).toEqual(["step-new"]);
+		expect(snapshot.cards).toEqual([]);
+		expect(snapshot.logs).toEqual([]);
+		expect(snapshot.receipts).toEqual([]);
+		expect(snapshot.conversationMessages).toEqual([]);
+	});
+
+	test("respects runtime concurrency limit and stops queued tasks before they start", async () => {
+		const plan: PlanStep[] = [
+			{
+				id: "step-test",
+				title: "测试步骤",
+				tasks: [
+					{ id: "task-a", title: "任务 A", description: "pending", tools: [], skills: [] },
+					{ id: "task-b", title: "任务 B", description: "pending", tools: [], skills: [] },
+					{ id: "task-c", title: "任务 C", description: "pending", tools: [], skills: [] },
+				],
+			},
+		];
+		const children: FakeChildAgentProcess[] = [];
+		const manager = new RunManager({
+			steps: plan,
+			demoEnv: createDemoEnv(undefined, {
+				runtimeConfig: {
+					...DEFAULT_RUNTIME_CONFIG,
+					concurrency_limit: 1,
+					stop_steer_timeout_ms: 0,
+					stop_abort_timeout_ms: 0,
+				},
+			}),
+			childFactory: (options) => {
+				const child = new FakeChildAgentProcess(options, [], {
+					onKill: (runningChild) => {
+						queueMicrotask(() => {
+							runningChild.emit({
+								type: "process_close",
+								exitCode: 143,
+								signal: "SIGTERM",
+								stderrTail: "stopped before queued launch",
+							});
+						});
+					},
+				});
+				children.push(child);
+				return child;
+			},
+			now: createClock(100),
+		});
+
+		manager.start("demo");
+		await waitUntil(() => children.length >= 1);
+		manager.stop("user_stopped");
+		await manager.waitForIdle();
+
+		const tasks = manager.getSnapshot().run.steps[0]?.tasks ?? [];
+		expect(children).toHaveLength(1);
+		expect(tasks.map((task) => task.status)).toEqual(["stopped", "stopped", "stopped"]);
+		expect(tasks[1]?.attempts).toEqual([]);
+		expect(tasks[2]?.attempts).toEqual([]);
+		expect(
+			manager
+				.getSnapshot()
+				.logs.some((log) => log.type === "diagnostic" && log.message.includes("未启动") && log.taskId === "task-b"),
+		).toBe(true);
+	});
+
+	test("retries failed attempts with a fresh child process and preserves attempt metadata", async () => {
+		const plan: PlanStep[] = [
+			{
+				id: "step-test",
+				title: "测试步骤",
+				tasks: [
+					{
+						id: "task-test",
+						title: "测试任务",
+						description: "pending",
+						tools: [],
+						skills: [],
+						retry: {
+							max_attempts: 2,
+							base_delay_ms: 0,
+							retry_on: ["process_error"],
+						},
+					},
+				],
+			},
+		];
+		const children: FakeChildAgentProcess[] = [];
+		const manager = new RunManager({
+			steps: plan,
+			demoEnv: createDemoEnv(undefined, {
+				enableChildSession: true,
+				childSessionDir: "/tmp/rpc-task-console-session",
+				runtimeConfig: {
+					...DEFAULT_RUNTIME_CONFIG,
+					retry: {
+						...DEFAULT_RUNTIME_CONFIG.retry,
+						max_attempts: 3,
+						base_delay_ms: 10,
+						retry_on: ["process_error", "timeout"],
+					},
+				},
+			}),
+			childFactory: (options) => {
+				const child = new FakeChildAgentProcess(options, [], {
+					processId: 2000 + children.length,
+					onPrompt: (runningChild) => {
+						queueMicrotask(() => {
+							if (children.length === 1) {
+								runningChild.emit({
+									type: "process_error",
+									error: "attempt one failed",
+									stderrTail: "attempt one stderr",
+								});
+								runningChild.emit({
+									type: "process_close",
+									exitCode: 1,
+									signal: null,
+									stderrTail: "attempt one stderr",
+								});
+								return;
+							}
+							runningChild.emit({
+								type: "message_end",
+								message: createAssistantMessage(JSON.stringify({ content: "done" })),
+							});
+							runningChild.emit({ type: "agent_end", messages: [], willRetry: false });
+							runningChild.emit({
+								type: "process_close",
+								exitCode: 0,
+								signal: null,
+								stderrTail: "attempt two stderr",
+							});
+						});
+					},
+				});
+				children.push(child);
+				return child;
+			},
+			now: createClock(100),
+		});
+
+		manager.start("demo");
+		await manager.waitForIdle();
+
+		const task = manager.getSnapshot().run.steps[0]?.tasks[0];
+		expect(manager.getSnapshot().run.status).toBe("complete");
+		expect(children).toHaveLength(2);
+		expect(task?.attempts).toHaveLength(2);
+		expect(task?.attempts[0]).toMatchObject({
+			attempt: 1,
+			status: "fail",
+			errorCode: "process_error",
+			agent: {
+				processId: 2000,
+				sessionDir: "/tmp/rpc-task-console-session",
+			},
+		});
+		expect(task?.attempts[1]).toMatchObject({
+			attempt: 2,
+			status: "complete",
+			agent: {
+				processId: 2001,
+				sessionDir: "/tmp/rpc-task-console-session",
+			},
+		});
+		expect(task?.attempts[0]?.id).not.toBe(task?.attempts[1]?.id);
+	});
+
+	test("aborts attempts that exceed max_tool_calls and does not retry when retry_on is empty", async () => {
+		const plan: PlanStep[] = [
+			{
+				id: "step-test",
+				title: "测试步骤",
+				tasks: [
+					{
+						id: "task-test",
+						title: "测试任务",
+						description: "pending",
+						tools: ["read"],
+						skills: [],
+						retry: {
+							max_attempts: 3,
+							base_delay_ms: 0,
+							max_tool_calls: 1,
+							retry_on: [],
+						},
+					},
+				],
+			},
+		];
+		const children: FakeChildAgentProcess[] = [];
+		const manager = new RunManager({
+			steps: plan,
+			demoEnv: createDemoEnv(undefined, {
+				runtimeConfig: {
+					...DEFAULT_RUNTIME_CONFIG,
+					stop_abort_timeout_ms: 0,
+					retry: {
+						...DEFAULT_RUNTIME_CONFIG.retry,
+						max_attempts: 5,
+						max_tool_calls: 99,
+						retry_on: ["tool_limit_exceeded", "process_error"],
+					},
+				},
+			}),
+			childFactory: (options) => {
+				const child = new FakeChildAgentProcess(options, [], {
+					onPrompt: (runningChild) => {
+						queueMicrotask(() => {
+							runningChild.emit({ type: "tool_execution_start", toolCallId: "tool-1", toolName: "read" });
+							runningChild.emit({ type: "tool_execution_start", toolCallId: "tool-2", toolName: "read" });
+							runningChild.emit({
+								type: "process_close",
+								exitCode: 1,
+								signal: null,
+								stderrTail: "tool limit close",
+							});
+						});
+					},
+					onAbort: (runningChild) => {
+						queueMicrotask(() => {
+							runningChild.emit({
+								type: "process_close",
+								exitCode: 143,
+								signal: "SIGTERM",
+								stderrTail: "tool limit abort",
+							});
+						});
+					},
+				});
+				children.push(child);
+				return child;
+			},
+			now: createClock(100),
+		});
+
+		manager.start("demo");
+		await manager.waitForIdle();
+
+		const task = manager.getSnapshot().run.steps[0]?.tasks[0];
+		expect(children).toHaveLength(1);
+		expect(children[0]?.abortCount).toBe(1);
+		expect(task?.status).toBe("fail");
+		expect(task?.error?.code).toBe("tool_limit_exceeded");
+		expect(task?.attempts).toHaveLength(1);
+		expect(task?.attempts[0]).toMatchObject({
+			attempt: 1,
+			status: "fail",
+			toolCallCount: 2,
+			errorCode: "tool_limit_exceeded",
+		});
 	});
 });
 
-function createDemoEnv(exampleDir = mkdtempSync(join(tmpdir(), "rpc-task-console-demo-env-"))): RpcTaskConsoleEnv {
+function createDemoEnv(
+	exampleDir = mkdtempSync(join(tmpdir(), "rpc-task-console-demo-env-")),
+	overrides: Partial<RpcTaskConsoleEnv> = {},
+): RpcTaskConsoleEnv {
+	const childEnv: NodeJS.ProcessEnv = { ...process.env, ...overrides.childEnv };
+	if (overrides.childSessionDir) {
+		childEnv.PI_DEMO_CHILD_SESSION_DIR = overrides.childSessionDir;
+		childEnv.PI_CODING_AGENT_SESSION_DIR = overrides.childSessionDir;
+	}
 	return {
 		exampleDir,
 		port: 4175,
 		piCommand: "pi",
 		piArgs: ["--mode", "rpc", "--no-session"],
-		childEnv: process.env,
+		childEnv,
 		outputDir: join(exampleDir, ".rpc-task-console"),
 		snapshotDir: join(exampleDir, "snapshots"),
 		logDir: join(exampleDir, "logs"),
@@ -2306,68 +3151,274 @@ function createDemoEnv(exampleDir = mkdtempSync(join(tmpdir(), "rpc-task-console
 		childStderrDir: join(exampleDir, "stderr"),
 		conversationDir: join(exampleDir, "conversation"),
 		childAgentDir: join(exampleDir, "pi-agent"),
+		childSessionDir: overrides.childSessionDir,
 		enableChildSession: false,
 		runtimeConfigPath: join(exampleDir, "runtime.config.json"),
 		runtimeConfig: DEFAULT_RUNTIME_CONFIG,
 		childSettingsPath: join(exampleDir, "pi-agent", "settings.json"),
+		...overrides,
 	};
 }
 
 describe("rpc task console HTTP API", () => {
-	test("serves snapshots and starts runs through runtime API routes", async () => {
-		const server = createRpcTaskConsoleServer(createDemoEnv(), {
-			runManagerOptions: {
-				childFactory: createImmediateAgentFactory([]),
-				now: createClock(100),
-			},
+	test("serves canonical shell routes and starts runs through canonical runtime routes", async () => {
+		const manager = new RunManager({
+			demoEnv: createDemoEnv(),
+			childFactory: createImmediateAgentFactory([]),
+			now: createClock(100),
 		});
+		const server = createRpcTaskConsoleServer(createDemoEnv(), { runManager: manager });
 		const baseUrl = await listen(server);
 		try {
-			const initialResponse = await fetch(`${baseUrl}/api/snapshot`);
-			expect(initialResponse.status).toBe(200);
-			const initialSnapshot = await readJson<TaskSnapshot>(initialResponse);
+			const htmlResponse = await fetch(`${baseUrl}/`);
+			expect(htmlResponse.status).toBe(200);
+			expect(await htmlResponse.text()).toContain("/styles.css");
+
+			const stylesResponse = await fetch(`${baseUrl}/styles.css`);
+			expect(stylesResponse.status).toBe(200);
+			expect(stylesResponse.headers.get("content-type")).toContain("text/css");
+
+			const appResponse = await fetch(`${baseUrl}/app.js`);
+			expect(appResponse.status).toBe(200);
+			expect(await appResponse.text()).toContain("/runs/start");
+
+			const initialSnapshot = await readFirstSseSnapshot(baseUrl);
 			expect(initialSnapshot.run.status).toBe("idle");
 
-			const runResponse = await fetch(`${baseUrl}/api/run`, {
+			const runResponse = await fetch(`${baseUrl}/runs/start`, {
 				method: "POST",
 				headers: { "content-type": "application/json" },
-				body: JSON.stringify({ instruction: "demo" }),
+				body: JSON.stringify({ steps: createInitialSteps(), userInstruction: "demo" }),
 			});
 			expect(runResponse.status).toBe(202);
 			const runBody = await readJson<{ readonly run: TaskRun }>(runResponse);
 			expect(runBody.run.id).toBe("run-100-1");
 
-			await waitUntilSnapshot(baseUrl, (snapshot) => snapshot.run.status === "fail");
-			const finalResponse = await fetch(`${baseUrl}/api/snapshot`);
-			const finalSnapshot = await readJson<TaskSnapshot>(finalResponse);
+			await manager.waitForIdle();
+			const finalSnapshot = await readFirstSseSnapshot(baseUrl);
 			expect(finalSnapshot.cards).toHaveLength(4);
 		} finally {
 			await closeServer(server);
 		}
 	});
 
-	test("streams snapshot events over SSE", async () => {
-		const server = createRpcTaskConsoleServer(createDemoEnv(), {
-			runManagerOptions: {
-				childFactory: createImmediateAgentFactory([]),
-				now: createClock(100),
+	test("validates canonical runtime payloads, replaces runs, and resets to the latest selected steps", async () => {
+		const firstSteps: PlanStep[] = [
+			{
+				id: "step-first",
+				title: "第一步",
+				tasks: [{ id: "task-first", title: "第一任务", description: "pending", tools: [], skills: [] }],
 			},
+		];
+		const secondSteps: PlanStep[] = [
+			{
+				id: "step-second",
+				title: "第二步",
+				tasks: [
+					{
+						id: "task-second",
+						title: "第二任务",
+						description: "done",
+						tools: [],
+						skills: [],
+						card_type: "text",
+						data_structure: [{ field: "text", type: "string", required: true }],
+					},
+				],
+			},
+		];
+		const children: FakeChildAgentProcess[] = [];
+		const manager = new RunManager({
+			steps: createInitialSteps(),
+			demoEnv: createDemoEnv(undefined, {
+				runtimeConfig: {
+					...DEFAULT_RUNTIME_CONFIG,
+					concurrency_limit: 1,
+					stop_steer_timeout_ms: 0,
+					stop_abort_timeout_ms: 0,
+				},
+			}),
+			childFactory: (options) => {
+				const child = new FakeChildAgentProcess(options, [], {
+					onKill: (runningChild) => {
+						if (children.length === 1) {
+							queueMicrotask(() => {
+								runningChild.emit({
+									type: "process_close",
+									exitCode: 143,
+									signal: "SIGTERM",
+									stderrTail: "old run killed",
+								});
+							});
+						}
+					},
+					onPrompt: (runningChild) => {
+						if (options.taskId !== "task-second") {
+							return;
+						}
+						queueMicrotask(() => {
+							runningChild.emit({
+								type: "message_end",
+								message: createAssistantMessage(
+									JSON.stringify({ content: "replacement done", data: { text: "ok" } }),
+								),
+							});
+							runningChild.emit({ type: "agent_end", messages: [], willRetry: false });
+							runningChild.emit({
+								type: "process_close",
+								exitCode: 0,
+								signal: null,
+								stderrTail: "replacement close",
+							});
+						});
+					},
+				});
+				children.push(child);
+				return child;
+			},
+			now: createClock(100),
 		});
+		const server = createRpcTaskConsoleServer(createDemoEnv(), { runManager: manager });
 		const baseUrl = await listen(server);
 		try {
-			const controller = new AbortController();
-			const response = await fetch(`${baseUrl}/events`, { signal: controller.signal });
-			expect(response.status).toBe(200);
-			const reader = response.body?.getReader();
-			if (!reader) {
-				throw new Error("Missing SSE response body");
-			}
-			const chunk = await reader.read();
-			controller.abort();
-			const text = new TextDecoder().decode(chunk.value);
-			expect(text).toContain("event: snapshot");
-			expect(text).toContain('"status":"idle"');
+			const missingStepsResponse = await fetch(`${baseUrl}/runs/start`, {
+				method: "POST",
+				headers: { "content-type": "application/json" },
+				body: JSON.stringify({ userInstruction: "demo" }),
+			});
+			expect(missingStepsResponse.status).toBe(400);
+
+			const missingInstructionResponse = await fetch(`${baseUrl}/runs/replace`, {
+				method: "POST",
+				headers: { "content-type": "application/json" },
+				body: JSON.stringify({ steps: secondSteps }),
+			});
+			expect(missingInstructionResponse.status).toBe(400);
+
+			const startResponse = await fetch(`${baseUrl}/runs/start`, {
+				method: "POST",
+				headers: { "content-type": "application/json" },
+				body: JSON.stringify({ steps: firstSteps, userInstruction: "first instruction" }),
+			});
+			expect(startResponse.status).toBe(202);
+			await waitUntil(() => children.length === 1);
+			expect(manager.getSnapshot().run.steps.map((step) => step.id)).toEqual(["step-first"]);
+
+			const replaceResponse = await fetch(`${baseUrl}/runs/replace`, {
+				method: "POST",
+				headers: { "content-type": "application/json" },
+				body: JSON.stringify({ steps: secondSteps, userInstruction: "replacement instruction" }),
+			});
+			expect(replaceResponse.status).toBe(202);
+			await waitUntil(() => children.length === 2);
+			await manager.waitForIdle();
+
+			const replacedSnapshot = await readFirstSseSnapshot(baseUrl);
+			expect(replacedSnapshot.run.userInstruction).toBe("replacement instruction");
+			expect(replacedSnapshot.run.steps.map((step) => step.id)).toEqual(["step-second"]);
+
+			const resetResponse = await fetch(`${baseUrl}/runs/reset`, {
+				method: "POST",
+				headers: { "content-type": "application/json" },
+				body: JSON.stringify({ steps: secondSteps }),
+			});
+			expect(resetResponse.status).toBe(200);
+
+			const resetSnapshot = await readFirstSseSnapshot(baseUrl);
+			expect(resetSnapshot.run.status).toBe("idle");
+			expect(resetSnapshot.run.steps.map((step) => step.id)).toEqual(["step-second"]);
+			expect(resetSnapshot.cards).toEqual([]);
+			expect(resetSnapshot.logs).toEqual([]);
+			expect(resetSnapshot.receipts).toEqual([]);
+			expect(resetSnapshot.conversationMessages).toEqual([]);
 		} finally {
+			await closeServer(server);
+		}
+	});
+
+	test("streams complete snapshots over SSE and reconnects with the latest backend state", async () => {
+		const selectedSteps: PlanStep[] = [
+			{
+				id: "step-sse",
+				title: "SSE 步骤",
+				tasks: [
+					{
+						id: "task-sse",
+						title: "SSE 任务",
+						description: "done",
+						tools: [],
+						skills: [],
+						card_type: "text",
+						data_structure: [{ field: "text", type: "string", required: true }],
+					},
+				],
+			},
+		];
+		const manager = new RunManager({
+			steps: createInitialSteps(),
+			demoEnv: createDemoEnv(),
+			childFactory: (options) =>
+				new FakeChildAgentProcess(options, [], {
+					onPrompt: (child) => {
+						queueMicrotask(() => {
+							child.emit({
+								type: "message_end",
+								message: createAssistantMessage(
+									JSON.stringify({ content: "sse done", data: { text: "done" } }),
+								),
+							});
+							child.emit({ type: "agent_end", messages: [], willRetry: false });
+							child.emit({
+								type: "process_close",
+								exitCode: 0,
+								signal: null,
+								stderrTail: "sse close",
+							});
+						});
+					},
+				}),
+			now: createClock(100),
+		});
+		const server = createRpcTaskConsoleServer(createDemoEnv(), { runManager: manager });
+		const baseUrl = await listen(server);
+		const stream = await openSseSnapshotStream(baseUrl);
+		try {
+			const initialSnapshot = await readNextSseSnapshot(stream);
+			expect(initialSnapshot.run.status).toBe("idle");
+
+			const startResponse = await fetch(`${baseUrl}/runs/start`, {
+				method: "POST",
+				headers: { "content-type": "application/json" },
+				body: JSON.stringify({ steps: selectedSteps, userInstruction: "stream me" }),
+			});
+			expect(startResponse.status).toBe(202);
+
+			const completedSnapshot = await waitForSseSnapshot(stream, (snapshot) => snapshot.run.status === "complete");
+			expect(completedSnapshot.run.steps[0]?.tasks[0]?.result).toEqual({
+				status: "complete",
+				content: "sse done",
+				data: { text: "done" },
+			});
+			expect(completedSnapshot.cards).toHaveLength(1);
+			expect(completedSnapshot.cards[0]?.taskId).toBe("task-sse");
+			expect(completedSnapshot.conversationMessages).toHaveLength(1);
+			expect(completedSnapshot.conversationMessages[0]).toMatchObject({
+				id: expect.stringContaining("message-run-100-1-step-sse-task-sse-"),
+				runId: "run-100-1",
+				stepId: "step-sse",
+				taskId: "task-sse",
+				content: "sse done",
+			});
+			expect(typeof completedSnapshot.conversationMessages[0]?.time).toBe("number");
+			expect(
+				completedSnapshot.receipts.some((receipt) => receipt.message.includes("【SSE 步骤】【SSE 任务】已完成")),
+			).toBe(true);
+
+			stream.controller.abort();
+			const reconnectedSnapshot = await readFirstSseSnapshot(baseUrl);
+			expect(reconnectedSnapshot).toEqual(completedSnapshot);
+		} finally {
+			stream.controller.abort();
 			await closeServer(server);
 		}
 	});
@@ -2384,7 +3435,7 @@ async function handleFakeMcpRequest(
 	request: IncomingMessage,
 	response: ServerResponse,
 	received: Array<{ readonly method: string; readonly sessionId?: string; readonly accept?: string }>,
-	useSseToolResult: boolean,
+	options: { readonly mode: "json" | "sse" | "http-error" | "jsonrpc-error" | "protocol-mismatch" },
 ): Promise<void> {
 	const message = await readRequestJson(request);
 	received.push({
@@ -2414,15 +3465,45 @@ async function handleFakeMcpRequest(
 		return;
 	}
 	if (message.method === "tools/call") {
+		if (options.mode === "http-error") {
+			response.statusCode = 502;
+			response.setHeader("content-type", "application/json");
+			response.end(JSON.stringify({ error: "upstream failed" }));
+			return;
+		}
+		if (options.mode === "jsonrpc-error") {
+			response.setHeader("content-type", "application/json");
+			response.end(
+				JSON.stringify({
+					jsonrpc: "2.0",
+					id: message.id,
+					error: {
+						code: -32001,
+						message: "tool exploded",
+						data: { retryable: false },
+					},
+				}),
+			);
+			return;
+		}
+		if (options.mode === "protocol-mismatch") {
+			response.setHeader("content-type", "application/json");
+			response.end(JSON.stringify({ ok: true, tool: "echo" }));
+			return;
+		}
 		const result = {
 			jsonrpc: "2.0",
 			id: message.id,
 			result: {
 				content: [{ type: "text", text: "called echo" }],
 				isError: false,
+				structuredContent: {
+					tool: "echo",
+					echoedArguments: readFakeMcpToolArguments(message.params),
+				},
 			},
 		};
-		if (useSseToolResult) {
+		if (options.mode === "sse") {
 			response.setHeader("content-type", "text/event-stream");
 			response.end(`event: message\ndata: ${JSON.stringify(result)}\n\n`);
 			return;
@@ -2455,6 +3536,14 @@ function isFakeMcpRequest(value: unknown): value is FakeMcpRequest {
 	return candidate.jsonrpc === "2.0" && typeof candidate.method === "string";
 }
 
+function readFakeMcpToolArguments(value: unknown): unknown {
+	if (typeof value !== "object" || value === null) {
+		return undefined;
+	}
+	const params = value as { readonly arguments?: unknown };
+	return params.arguments;
+}
+
 async function listen(server: Server): Promise<string> {
 	server.listen(0, "127.0.0.1");
 	await once(server, "listening");
@@ -2473,39 +3562,95 @@ async function closeServer(server: Server): Promise<void> {
 	await once(server, "close");
 }
 
-function waitUntilSnapshot(baseUrl: string, predicate: (snapshot: TaskSnapshot) => boolean): Promise<void> {
-	return new Promise((resolve, reject) => {
-		const startedAt = Date.now();
-		let pending = false;
-		const timer = setInterval(() => {
-			if (pending) {
-				return;
-			}
-			pending = true;
-			void fetch(`${baseUrl}/api/snapshot`)
-				.then((response) => readJson<TaskSnapshot>(response))
-				.then((snapshot) => {
-					if (predicate(snapshot)) {
-						clearInterval(timer);
-						resolve();
-					} else if (Date.now() - startedAt > 2_000) {
-						clearInterval(timer);
-						reject(new Error("Timed out waiting for snapshot"));
-					}
-				})
-				.catch((error: unknown) => {
-					clearInterval(timer);
-					reject(error instanceof Error ? error : new Error(String(error)));
-				})
-				.finally(() => {
-					pending = false;
-				});
-		}, 10);
-	});
-}
-
 async function readJson<T>(response: Response): Promise<T> {
 	return (await response.json()) as T;
+}
+
+interface SseSnapshotStream {
+	readonly controller: AbortController;
+	readonly reader: ReadableStreamDefaultReader<Uint8Array>;
+	readonly decoder: InstanceType<typeof TextDecoder>;
+	buffer: string;
+}
+
+async function openSseSnapshotStream(baseUrl: string): Promise<SseSnapshotStream> {
+	const controller = new AbortController();
+	const response = await fetch(`${baseUrl}/events`, { signal: controller.signal });
+	if (response.status !== 200) {
+		throw new Error(`Expected SSE 200, received ${response.status}`);
+	}
+	const reader = response.body?.getReader();
+	if (!reader) {
+		throw new Error("Missing SSE response body");
+	}
+	return {
+		controller,
+		reader,
+		decoder: new TextDecoder(),
+		buffer: "",
+	};
+}
+
+async function readFirstSseSnapshot(baseUrl: string): Promise<TaskSnapshot> {
+	const stream = await openSseSnapshotStream(baseUrl);
+	try {
+		return await readNextSseSnapshot(stream);
+	} finally {
+		stream.controller.abort();
+	}
+}
+
+async function waitForSseSnapshot(
+	stream: SseSnapshotStream,
+	predicate: (snapshot: TaskSnapshot) => boolean,
+): Promise<TaskSnapshot> {
+	const startedAt = Date.now();
+	while (Date.now() - startedAt <= 2_000) {
+		const snapshot = await readNextSseSnapshot(stream);
+		if (predicate(snapshot)) {
+			return snapshot;
+		}
+	}
+	throw new Error("Timed out waiting for SSE snapshot");
+}
+
+async function readNextSseSnapshot(stream: SseSnapshotStream): Promise<TaskSnapshot> {
+	while (true) {
+		const delimiterIndex = stream.buffer.indexOf("\n\n");
+		if (delimiterIndex >= 0) {
+			const frame = stream.buffer.slice(0, delimiterIndex);
+			stream.buffer = stream.buffer.slice(delimiterIndex + 2);
+			const snapshot = parseSseSnapshotFrame(frame);
+			if (snapshot) {
+				return snapshot;
+			}
+			continue;
+		}
+		const chunk = await stream.reader.read();
+		if (chunk.done) {
+			throw new Error("SSE stream closed before snapshot arrived");
+		}
+		stream.buffer += stream.decoder.decode(chunk.value, { stream: true });
+	}
+}
+
+function parseSseSnapshotFrame(frame: string): TaskSnapshot | undefined {
+	const lines = frame.split("\n");
+	let eventName = "";
+	const dataLines: string[] = [];
+	for (const line of lines) {
+		if (line.startsWith("event:")) {
+			eventName = line.slice("event:".length).trim();
+			continue;
+		}
+		if (line.startsWith("data:")) {
+			dataLines.push(line.slice("data:".length).trim());
+		}
+	}
+	if (eventName !== "snapshot" || dataLines.length === 0) {
+		return undefined;
+	}
+	return JSON.parse(dataLines.join("\n")) as TaskSnapshot;
 }
 
 function readJsonLines<T>(path: string): T[] {

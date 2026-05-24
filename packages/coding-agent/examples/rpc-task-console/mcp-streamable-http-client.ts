@@ -52,20 +52,24 @@ export class McpStreamableHttpClient {
 		args: Record<string, unknown>,
 		signal: AbortSignal | undefined,
 	): Promise<McpToolResult> {
-		await this.ensureInitialized(signal);
-		const response = await this.sendRequest(
-			{
-				jsonrpc: "2.0",
-				id: this.nextRequestId(),
-				method: "tools/call",
-				params: { name, arguments: args },
-			},
-			signal,
-		);
-		if (!isMcpToolResult(response.result)) {
-			throw new Error(`MCP tools/call for "${name}" returned an invalid result`);
+		try {
+			await this.ensureInitialized(signal);
+			const response = await this.sendRequest(
+				{
+					jsonrpc: "2.0",
+					id: this.nextRequestId(),
+					method: "tools/call",
+					params: { name, arguments: args },
+				},
+				signal,
+			);
+			if (!isMcpToolResult(response.result)) {
+				throw new Error(`MCP protocol error: tools/call for "${name}" returned an invalid result`);
+			}
+			return response.result;
+		} catch (error: unknown) {
+			throw wrapToolCallError(name, error);
 		}
-		return response.result;
 	}
 
 	private async ensureInitialized(signal: AbortSignal | undefined): Promise<void> {
@@ -120,7 +124,9 @@ export class McpStreamableHttpClient {
 		}
 		const message = await readJsonRpcResponse(response);
 		if (message.error) {
-			throw new Error(message.error.message ?? `MCP request "${request.method}" failed`);
+			const code = typeof message.error.code === "number" ? ` ${message.error.code}` : "";
+			const messageText = message.error.message ?? `MCP request "${request.method}" failed`;
+			throw new Error(`MCP request "${request.method}" failed with JSON-RPC error${code}: ${messageText}`);
 		}
 		return message;
 	}
@@ -150,7 +156,7 @@ async function readJsonRpcResponse(response: Response): Promise<JsonRpcResponse>
 	}
 	const value = (await response.json()) as unknown;
 	if (!isJsonRpcResponse(value)) {
-		throw new Error("MCP HTTP response was not a JSON-RPC response");
+		throw new Error("MCP protocol error: HTTP response was not a JSON-RPC response");
 	}
 	return value;
 }
@@ -169,7 +175,7 @@ function readSseJsonRpcResponse(body: string): JsonRpcResponse {
 			return value;
 		}
 	}
-	throw new Error("MCP SSE response did not contain a JSON-RPC response");
+	throw new Error("MCP protocol error: SSE response did not contain a JSON-RPC response");
 }
 
 function isInitializeResult(value: unknown): value is { readonly protocolVersion: string } {
@@ -195,4 +201,16 @@ function isMcpToolResult(value: unknown): value is McpToolResult {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
 	return typeof value === "object" && value !== null;
+}
+
+function wrapToolCallError(toolName: string, error: unknown): Error {
+	if (isAbortError(error)) {
+		return error;
+	}
+	const message = error instanceof Error ? error.message : String(error);
+	return new Error(`MCP tool "${toolName}" failed: ${message}`);
+}
+
+function isAbortError(error: unknown): error is Error {
+	return error instanceof Error && error.name === "AbortError";
 }

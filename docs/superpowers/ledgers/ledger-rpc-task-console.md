@@ -2,232 +2,56 @@
 
 ## Current Snapshot
 
-- Spec：`docs/superpowers/specs/spec-rpc-task-console.md`
-- Plan：`docs/superpowers/plans/plan-rpc-task-console.md`
-- 参考资料：`docs/superpowers/specs/references/`
-- 阶段：Gate 2 hardening 已完成；下一步进入 Task 5。
-- Task 1 状态：已完成；plan 中 Task 1 Step 1-7 checkbox 已更新。
-- Task 2 状态：已完成；plan 中 Task 2 Step 1-6 checkbox 已更新。
-- Task 3 状态：已完成；plan 中 Task 3 Step 1-6 checkbox 已更新。
-- Task 4 状态：已完成；plan 中 Task 4 Step 1-6 checkbox 已更新。
-- Gate 2 状态：已通过；plan 中 Gate 2 修复补充 checkbox 已更新。
-- Gate 2 hardening 状态：已完成；plan 中 hardening checkbox 已更新。
-- 主会话职责：只读检查、需求对齐、计划、子代理委派、复核、测试调度、ledger/plan 更新。
-- 代码实现职责：由子代理承担；当 `allow_main_agent_code_edits = false` 时，主会话不得接管代码或测试实现。
+- Spec: `docs/superpowers/specs/spec-rpc-task-console.md`
+- Plan: `docs/superpowers/plans/plan-rpc-task-console.md`
+- 参考资料: `docs/superpowers/specs/references/`
+- 当前阶段: Task 8 已完成并通过主会话复跑验证；下一步是 Task 9 UI 拆分和 snapshot 渲染。
+- 主会话职责: 只读检查、需求对齐、计划、子代理委派、复核、验证调度、ledger/plan 更新。
+- 实现职责: 由 `implementation_worker` 子代理承担；主会话不得接管业务代码或测试代码实现。
+- `.codex/hooks.json` Stop hook 删除: 用户已说明为有意修改，当前不恢复，也不作为 Task 风险处理。
 
-## Current Worktree Notes
+## Task Status
 
-- 已确认并执行的规则文件修改：
-  - `AGENTS.md`：新增 `Harness Precedence`。
-  - `.codex/skills/codex-harness/SKILL.md`：新增控制面优先级，并将 skill 覆盖规则改为通用 workflow/development/planning/debugging/review/subagent 类 skill 表述。
-  - `.codex/hooks/post-tool-use.mjs`：提示后续优先更新 ledger 当前快照，关键事件才追加记录。
-  - `.codex/hooks/stop.mjs`：提示结束前优先覆盖当前状态，避免普通对话流水账。
-  - `.codex/hooks/session-start.mjs`：提示主会话控制面职责，并明确 `allow_main_agent_code_edits = false` 时不得接管代码或测试实现。
-  - `.codex/hooks/user-prompt-submit.mjs`：提示 harness precedence 覆盖普通开发自主性和通用 skills。
-  - `.codex/hooks/subagent-start.mjs`：提示子代理仅按父会话委派范围执行，不扩大范围、不提交 commit、不改 harness 文件，除非明确委派。
-  - `.codex/hooks/subagent-stop.mjs`：提示子代理收尾报告使用简短事实摘要，不写流水账。
-  - `docs/superpowers/ledgers/ledger-rpc-task-console.md`：整理为当前快照、当前风险、最近验证和关键事件日志结构。
-- Task 1 最终实现改动：
-  - `packages/coding-agent/examples/rpc-task-console/types.ts`
-  - `packages/coding-agent/examples/rpc-task-console/tasks.ts`
-  - `packages/coding-agent/examples/rpc-task-console/plan-validation.ts`
-  - `packages/coding-agent/test/rpc-task-console.test.ts`
-- Task 1 实现结果：
-  - `PlanTask` / `RuntimeTask` 输入契约已迁移到 `tools`、`skills`、`retry`、`attempts`。
-  - `DataFieldType` 已包含 `integer`，并新增 `TaskRetryPolicy` / `TaskRetryReason`。
-  - `validatePlanSteps()` 已实现 plan 输入校验和 `tools` / `skills` 缺省归一化。
-  - 公安 workflow 参考 JSON 可通过校验并克隆为 runtime steps。
-- Task 2 最终实现改动：
-  - `packages/coding-agent/examples/rpc-task-console/types.ts`
-  - `packages/coding-agent/examples/rpc-task-console/task-store.ts`
-  - `packages/coding-agent/examples/rpc-task-console/task-dispatcher.ts`
-  - `packages/coding-agent/test/rpc-task-console.test.ts`
-- Task 2 实现结果：
-  - `TaskSnapshot` 包含 `conversationMessages`，并新增 `TaskConversationMessage`。
-  - `RuntimeTask` / `TaskAttempt` 保存 agent、process、stopped 结构化诊断。
-  - `AgentTaskResult` / `TaskResult` 主契约已从 `card_data` 迁移为 `data`，`task-dispatcher.ts` producer 侧已同步收口。
-  - `task_completed` 同次 store mutation 写入 task result、conversation message、receipt 和应创建的 card。
-  - 无 `card_type` 但 result 带 `data` 时记录诊断，不创建 card。
-  - 终态 task/step/run 的迟到状态事件只记录诊断，不覆盖终态。
-- Gate 1 复核结果：
-  - `PlanTask` 不再包含 `mcp`；`mcp` 残留仅在 MCP adapter/config 相关命名中。
-  - `DataFieldType` 包含 `integer`。
-  - 公安 workflow 参考结构可通过 `validatePlanSteps()`，并可被 `createRuntimeSteps()` 克隆。
-  - 非法 workflow 覆盖 duplicate id、非法 card/retry/data_structure 等拒绝路径。
-  - store snapshot 包含 `conversationMessages`。
-  - dispatcher 真实 child event 链路会把 task agent 元数据、stopped 详情和 child process 诊断写入 TaskStore snapshot。
-  - card 只从 `result.data` 创建；旧 `card_data` 不再被静默消费。
-  - 无 `card_type` 但 result 带 `data` 时不创建 card、不 fail attempt。
-  - 失败 task 不写入 `cards`。
-  - 迟到状态事件不能覆盖终态 task。
-  - 一次 `task_completed` mutation 后的 snapshot 已包含 task result、conversation message、receipt 和应创建的 card。
-- Task 3 最终实现改动：
-  - `packages/coding-agent/examples/rpc-task-console/runtime-config.ts`
-  - `packages/coding-agent/examples/rpc-task-console/child-settings.ts`
-  - `packages/coding-agent/examples/rpc-task-console/persistence.ts`
-  - `packages/coding-agent/examples/rpc-task-console/runtime.config.json`
-  - `packages/coding-agent/examples/rpc-task-console/runtime.config.example.json`
-  - `packages/coding-agent/examples/rpc-task-console/env.ts`
-  - `packages/coding-agent/examples/rpc-task-console/child-agent-process.ts`
-  - `packages/coding-agent/test/rpc-task-console.test.ts`
-- Task 3 实现结果：
-  - `runtime.config.json` / `runtime.config.example.json` 已写入默认 runtime 配置，loader 会校验缺失、JSON 格式和字段类型。
-  - `.env` 支持输出目录、child agent/session、runtime config 路径；相对路径按 example 目录解析，未单独配置的输出目录从 `PI_DEMO_OUTPUT_DIR` 派生。
-  - `PI_DEMO_CHILD_AGENT_DIR` 会作为 child `PI_CODING_AGENT_DIR`，并写入 child `settings.json`。
-  - child session 默认关闭并保留 `--no-session`；启用时要求 `PI_DEMO_CHILD_SESSION_DIR`，并改用 `--session-dir`。
-  - persistence writer 已支持 snapshot、task logs、normalized RPC events、child stderr tail、conversation messages；child RPC events/stderr tail 已接入运行链路。
-- Task 4 最终实现改动：
-  - `packages/coding-agent/examples/rpc-task-console/child-agent-process.ts`
-  - `packages/coding-agent/examples/rpc-task-console/prompt-builder.ts`
-  - `packages/coding-agent/examples/rpc-task-console/result-validation.ts`
-  - `packages/coding-agent/examples/rpc-task-console/task-dispatcher.ts`
-  - `packages/coding-agent/examples/rpc-task-console/types.ts`
-  - `packages/coding-agent/test/rpc-task-console.test.ts`
-- Task 4 实现结果：
-  - child JSONL 事件归一化已覆盖 `child_spawned`、`prompt_response_failure`、`message_*`、`turn_*`、`agent_*`、`tool_execution_*`、`auto_retry_*`、`unknown_json_event`、`process_close`、`process_error`。
-  - dispatcher 使用 `buildTaskPrompt()` 构造 task prompt，并要求最终只输出 `{ content, data? }`。
-  - assistant `message_end` 解析并校验最终结果，`agent_end.willRetry === true` 不结算，`agent_end.willRetry !== true` 且已有合法结果才完成 task。
-  - `prompt_response_failure`、缺少合法最终结果、`data_structure` 校验失败、合法结果前 process close 均按对应错误路径进入 fail。
-  - `message_update`、auto retry、tool error、unknown JSON event 进入 task logs；unknown JSON event 沿 child-side RPC event persistence 写入。
-- Gate 2 修复最终实现改动：
-  - `packages/coding-agent/examples/rpc-task-console/run-manager.ts`
-  - `packages/coding-agent/test/rpc-task-console.test.ts`
-- Gate 2 修复结果：
-  - `RunManager` 订阅 `TaskStore` snapshot，并使用 `demoEnv.snapshotDir`、`demoEnv.logDir`、`demoEnv.conversationDir` 写出本地事实副本。
-  - 每次 snapshot 更新后覆盖写最新 snapshot。
-  - task logs 和 conversation messages 按新增切片增量写入，run 切换时重置游标。
-  - `TaskStore` 仍是状态事实源，持久化不反向驱动状态。
-  - 新增真实 run 链路测试，覆盖 snapshot、task logs、conversation messages 落盘且不重复。
-- 任务开始前已存在的无关未跟踪文件，本任务不修改：
-  - `docs/codex-cli-harness-notes.md`
-  - `docs/repo_review.html`
-  - `docs/repo_review.md`
+- Task 1 Workflow 输入契约和公安 workflow 参考结构: 已完成，plan Step 1-7 已勾选。
+- Task 2 TaskStore、attempts、conversationMessages 和终态 guard: 已完成，plan Step 1-6 已勾选。
+- Gate 1: 初次复核未通过；修复 dispatcher/child 真实链路诊断和旧 `card_data` fallback 后通过。
+- Task 3 Runtime 配置、本地持久化和 child session 隔离: 已完成，plan Step 1-8 已勾选。
+- Task 4 Child Pi RPC 事件、prompt、最终结果解析和校验: 已完成，plan Step 1-6 已勾选。
+- Gate 2: 初次复核未通过；补接真实 run 链路 snapshot/task logs/conversation messages 持久化后通过。
+- Gate 2 hardening: 已完成；补 `.env.example` 变量示例和 prompt ack 不完成 task 的回归测试。
+- Task 5 调度、并发、retry 和 tool call limit: 已完成，plan Step 1-6 已勾选。
+- Task 6 停止、替换和旧 run 清理: 已完成，plan Step 1-5 已勾选。
+- Task 7 MCP adapter 和 task scoped allowlist: 已完成，plan Step 1-5 已勾选。
+- Task 8 HTTP/SSE API 对齐: 已完成，plan Step 1-3 已勾选。
 
-## Current Risks / Open Questions
+## Useful Findings And Scope Corrections
 
-- 后续 Task 4+ 仍需处理 child RPC 事件归一化、prompt 构造、最终结果解析/校验、调度、retry、stop/replace 和 MCP allowlist 等内容。
-- Task 3 已实现 snapshot/task logs/conversation messages writer 并单测覆盖；实时运行链路当前只接入 child RPC events/stderr tail，snapshot/task logs/conversation messages 的进一步 live persistence 需在 Gate 2 复核时继续确认。
-- Gate 2 reviewer 剩余非阻断风险：`.env.example` 尚未补新增输出目录/session/runtime config 示例；`prompt` success 不完成 task 目前主要靠代码路径和 review 证明，单独回归测试护栏偏弱。
-- Gate 2 hardening 结果：
-  - `.env.example` 已补齐 runtime 输出目录、child agent/session、runtime config 相关变量示例，未写入密钥值。
-  - `rpc-task-console.test.ts` 已新增 prompt ack 回归测试：`rpc_response` prompt success 只保持 running，不写 result/card/conversation message；合法 `message_end` + final `agent_end` 后才 complete。
-  - 本 hardening 只覆盖 prompt ack 时序，不扩大到其他 RPC command ack 变体。
-- 后续主会话仍不得把“继续推进”“有意义的非重叠工作”解释为直接代码实现；只能解释为控制面工作。
-- hooks 现在已改为要求维护 Current Snapshot，但尚未经过实际后续会话验证。
-- 新的配置方向：不要关闭 `features.multi_agent`；应考虑在各子代理 role 配置层设置 `[features] hooks = false`，让 harness hooks 只约束主会话。子代理约束改由父会话 prompt 和 agent role `developer_instructions` 承担。
-- 已按用户确认修改全局 agent role 配置 `/Users/liangpn/.codex/agents/*.toml`，为 13 个 role 增加 `[features] hooks = false`，使项目 harness hooks 只约束主会话。
-- 只读验证已确认以下 role 均包含 `hooks = false`：`architecture-critic`、`code-reviewer`、`docs-researcher`、`harness-reviewer`、`implementation-worker`、`ledger-checker`、`plan-reviewer`、`requirements-analyst`、`spark-scout`、`spec-reviewer`、`task-decomposer`、`test-reviewer`、`ui-live-tester`。
+- Task 2 原 plan 遗漏 `packages/coding-agent/examples/rpc-task-console/task-dispatcher.ts` producer 侧 `card_data -> data` 收口；已补入 Task 2 范围并完成。
+- Gate 1 阻断点: dispatcher/child 真实链路未把诊断写入 TaskStore；TaskStore 仍兼容旧 `card_data` fallback。两项均已修复。
+- Gate 2 阻断点: Task 3/4 只实现了持久化 helper 和 child RPC/stderr live path，snapshot/task logs/conversation messages 未接入真实 run 链路；已通过 `run-manager.ts` 补接。
+- Task 5 实现发现 `run-manager.ts` 需要传递 `runtimeConfig` 给 dispatcher；已纳入实现范围。
+- Task 6 实现发现 `task-store.ts` 需要支持 run-level stopping metadata、stale event diagnostics 和 reset/replace 状态处理；已纳入实现范围。
+- Task 7 协作问题: 早期委派 prompt 让子代理误判自己是主会话。已按用户确认更新 `AGENTS.md` 和 `.codex/skills/codex-harness/SKILL.md`，后续实现子代理 prompt 只保留极简实现合同，并明确其身份是 `implementation_worker` 子代理。
+- Task 8 实现发现 selected `steps` 必须成为 current run/reset snapshot 的事实源；已将 `run-manager.ts` 和 `task-store.ts` 补入 Task 8 范围。
 
 ## Latest Verification
 
-- `cd packages/coding-agent && npx tsx ../../node_modules/vitest/dist/cli.js --run test/rpc-task-console.test.ts`：通过，1 个 test file，33 tests passed。
-- `npm run check`：通过；`biome check --write --error-on-warnings .` 检查 601 个文件且 no fixes applied，`tsgo --noEmit` 通过，`npm run check:browser-smoke` 通过。
-- Task 2 子代理报告 `cd packages/coding-agent && npx tsx ../../node_modules/vitest/dist/cli.js --run test/rpc-task-console.test.ts` 通过，35 tests passed。
-- Task 2 子代理报告 `npm run check` 在 `task-dispatcher.ts` producer 侧收口前失败，报 `TS2353`；后续已通过窄范围子代理修正。
-- 主会话复跑 `cd packages/coding-agent && npx tsx ../../node_modules/vitest/dist/cli.js --run test/rpc-task-console.test.ts`：通过，1 个 test file，35 tests passed。
-- 主会话复跑 `npm run check`：通过；`biome check --write --error-on-warnings .` 检查 601 个文件且 no fixes applied，`tsgo --noEmit` 通过，`npm run check:browser-smoke` 通过。
-- Gate 1 修复后主会话复跑 `cd packages/coding-agent && npx tsx ../../node_modules/vitest/dist/cli.js --run test/rpc-task-console.test.ts`：通过，1 个 test file，38 tests passed。
-- Gate 1 修复后主会话复跑 `npm run check`：通过；`biome check --write --error-on-warnings .` 检查 601 个文件且 no fixes applied，`tsgo --noEmit` 通过，`npm run check:browser-smoke` 通过。
-- Task 3 主会话复跑 `cd packages/coding-agent && npx tsx ../../node_modules/vitest/dist/cli.js --run test/rpc-task-console.test.ts`：通过，1 个 test file，46 tests passed。
-- Task 3 主会话复跑 `npm run check`：通过；`biome check --write --error-on-warnings .` 检查 604 个文件且 no fixes applied，`tsgo --noEmit` 通过，`npm run check:browser-smoke` 通过。
-- Task 4 主会话复跑 `cd packages/coding-agent && npx tsx ../../node_modules/vitest/dist/cli.js --run test/rpc-task-console.test.ts`：通过，1 个 test file，58 tests passed。
-- Task 4 主会话复跑 `npm run check`：通过；`biome check --write --error-on-warnings .` 检查 606 个文件且 no fixes applied，`tsgo --noEmit` 通过，`npm run check:browser-smoke` 通过。
-- Gate 2 修复后主会话复跑 `cd packages/coding-agent && npx tsx ../../node_modules/vitest/dist/cli.js --run test/rpc-task-console.test.ts`：通过，1 个 test file，59 tests passed。
-- Gate 2 修复后主会话复跑 `npm run check`：通过；`biome check --write --error-on-warnings .` 检查 606 个文件且 no fixes applied，`tsgo --noEmit` 通过，`npm run check:browser-smoke` 通过。
-- Gate 2 hardening 后主会话复跑 `cd packages/coding-agent && npx tsx ../../node_modules/vitest/dist/cli.js --run test/rpc-task-console.test.ts`：通过，1 个 test file，60 tests passed。
-- Gate 2 hardening 后主会话复跑 `npm run check`：通过；`biome check --write --error-on-warnings .` 检查 606 个文件且 no fixes applied，`tsgo --noEmit` 通过，`npm run check:browser-smoke` 通过。
-- 主会话曾因仓库缺 `node_modules` 无法运行 Vitest；随后用 `npm ci --ignore-scripts` 恢复依赖。sandbox 内因 `/Users/liangpn/.npm` cache 权限失败，获批后在 sandbox 外成功安装 350 packages。
-- 已用 `rg` 只读验证 `/Users/liangpn/.codex/agents/*.toml` 均包含 `[features] hooks = false`。
-- 已运行 `node --check` 验证以下 hook 脚本语法通过：`session-start.mjs`、`user-prompt-submit.mjs`、`subagent-start.mjs`、`subagent-stop.mjs`。
+- Task 5 主会话复跑 `cd packages/coding-agent && npx tsx ../../node_modules/vitest/dist/cli.js --run test/rpc-task-console.test.ts`: 63 tests passed。
+- Task 5 主会话复跑 `npm run check`: 通过。
+- Task 6 主会话复跑 `cd packages/coding-agent && npx tsx ../../node_modules/vitest/dist/cli.js --run test/rpc-task-console.test.ts`: 65 tests passed。
+- Task 6 主会话复跑 `npm run check`: 通过。
+- Task 7 主会话复跑 `cd packages/coding-agent && npx tsx ../../node_modules/vitest/dist/cli.js --run test/rpc-task-console.test.ts`: 70 tests passed。
+- Task 7 主会话复跑 `npm run check`: 通过。
+- Task 8 子代理报告 `cd packages/coding-agent && npx tsx ../../node_modules/vitest/dist/cli.js --run test/rpc-task-console.test.ts`: 73 tests passed。
+- Task 8 子代理报告 `npm run check`: 首次因测试辅助类型中 `TextDecoder` 被当作类型使用失败；修复后通过。
+- Task 8 主会话复跑 `cd packages/coding-agent && npx tsx ../../node_modules/vitest/dist/cli.js --run test/rpc-task-console.test.ts`: 73 tests passed。
+- Task 8 主会话复跑 `npm run check`: 通过；`biome check --write --error-on-warnings .` 检查 606 个文件且 no fixes applied，`tsgo --noEmit` 通过，`npm run check:browser-smoke` 通过。
 
-## Event Log
+## Residual Risks / Open Questions
 
-### 2026-05-23
-
-- 启用项目级 harness 追踪；确认 spec、plan、ledger 权威路径。
-- 用户确认允许主会话更新 `docs/superpowers/ledgers/ledger-rpc-task-console.md` 和 `docs/superpowers/plans/plan-rpc-task-console.md`。
-- 委派 Task 1 实现子代理：
-  - agent id：`019e5524-0d1f-7b53-995f-f91c44239f7a`
-  - 角色：`implementation_worker`
-  - 范围：`types.ts`、`tasks.ts`、新增 `plan-validation.ts`、`rpc-task-console.test.ts`
-  - 结果：用户中途打断后，主会话停止该子代理；关闭前状态为 `running`，随后收到 `shutdown` 通知；子代理未提交最终完成报告。
-- 主会话越界倾向复盘：
-  - 错误表述：“本地实现 Task 1”。
-  - 结论：该倾向来自通用 workflow skill 和会话级默认开发代理规则的执行惯性；在本项目中必须被 harness control-plane 规则覆盖。
-- 用户要求修正规则优先级；主会话修改 `AGENTS.md` 和 `.codex/skills/codex-harness/SKILL.md`。
-- 用户指出 `codex-harness` 不应特指 SDD；主会话将表述改为覆盖所有 workflow/development/planning/debugging/review/subagent 类 skill。
-- 用户指出 hook 造成 ledger 逐轮追加冗长记录；主会话修改 `post-tool-use.mjs` 和 `stop.mjs`，并将本 ledger 整理为快照式结构。
-- 委派 Task 1 收尾子代理：
-  - agent id：`019e556a-b8f6-78f0-802d-632968b026cb`
-  - 角色：`implementation_worker`
-  - 范围：`types.ts`、`tasks.ts`、`plan-validation.ts`、`rpc-task-console.test.ts`
-  - 结果：子代理完成 Task 1 收尾，未提交 commit；主会话复核 diff 并重跑验证通过。
-- Task 1 验证结果：
-  - `packages/coding-agent/test/rpc-task-console.test.ts`：33 tests passed。
-  - `npm run check`：通过。
-- 委派 Task 2 实现子代理：
-  - agent id：`019e5589-30f3-78e2-8084-92b20eb6cfa4`
-  - 角色：`implementation_worker`
-  - 范围：`types.ts`、`task-store.ts`、`rpc-task-console.test.ts`
-  - 结果：子代理完成计划内 Task 2 改动；单文件 Vitest 通过 35 tests；`npm run check` 因计划外 `task-dispatcher.ts` 仍使用 `card_data` 失败。
-- 用户确认 Task 2 plan 遗漏 `task-dispatcher.ts` producer 侧 `card_data -> data` 收口；主会话已将 `task-dispatcher.ts` 补入 Task 2 文件列表，并在 Step 2 写明该迁移要求。
-- 委派 Task 2 `task-dispatcher.ts` 收口子代理：
-  - agent id：`019e5591-128b-7ce3-8606-62715ead23d1`
-  - 角色：`implementation_worker`
-  - 范围：仅 `task-dispatcher.ts`
-  - 结果：子代理因 usage limit errored，未完成实现。
-- 重新委派 Task 2 `task-dispatcher.ts` 收口子代理：
-  - agent id：`019e559b-0407-77c2-aab3-961d20be85e2`
-  - 角色：`implementation_worker`
-  - 范围：仅 `task-dispatcher.ts`
-  - 结果：子代理将 `createDemoTaskResult()` 中 4 处 `card_data` 改为 `data`，未修改范围外文件；子代理报告单文件 Vitest 和 `npm run check` 均通过。
-- Task 2 验证结果：
-  - `packages/coding-agent/test/rpc-task-console.test.ts`：35 tests passed。
-  - `npm run check`：通过。
-- Gate 1 初次复核：
-  - reviewer agent id：`019e55a0-8056-77a2-b1ac-dc23e27d3db3`
-  - 结果：Gate 1 未通过；阻断点为 dispatcher/child 真实链路未写入 TaskStore 诊断，以及 TaskStore 仍兼容旧 `card_data`。
-- 委派 Gate 1 修复子代理：
-  - agent id：`019e55a4-4e52-74c3-abe1-452f7f698b57`
-  - 角色：`implementation_worker`
-  - 范围：`task-dispatcher.ts`、`task-store.ts`、`rpc-task-console.test.ts`
-  - 结果：修复 dispatcher 到 TaskStore 的诊断链路；删除旧 `card_data` fallback；增加 legacy payload 负向测试和 dispatcher/fake child 真实链路诊断测试。
-- Gate 1 复核结果：
-  - Task 1 + Task 2 累计 gate 条件已通过。
-  - 验证：`packages/coding-agent/test/rpc-task-console.test.ts` 38 tests passed；`npm run check` 通过。
-
-### 2026-05-24
-
-- 委派 Task 3 实现子代理：
-  - agent id：`019e55ad-dde8-7140-af50-7519a6b70fdf`
-  - 角色：`implementation_worker`
-  - 范围：`runtime-config.ts`、`child-settings.ts`、`persistence.ts`、`runtime.config*.json`、`env.ts`、`child-agent-process.ts`、`rpc-task-console.test.ts`
-  - 结果：子代理完成 Task 3；主会话复核后接受，未提交 commit。
-- Task 3 验证结果：
-  - `packages/coding-agent/test/rpc-task-console.test.ts`：46 tests passed。
-  - `npm run check`：通过。
-- 委派 Task 4 实现子代理：
-  - agent id：`019e55bb-ecbf-76c3-ad5d-1f7e4917af79`
-  - 角色：`implementation_worker`
-  - 范围：`child-agent-process.ts`、新增 `prompt-builder.ts`、新增 `result-validation.ts`、`task-dispatcher.ts`、必要时小范围 `types.ts` / `persistence.ts`、`rpc-task-console.test.ts`
-  - 结果：子代理完成 Task 4；主会话复核后接受，未提交 commit。
-- Task 4 验证结果：
-  - `packages/coding-agent/test/rpc-task-console.test.ts`：58 tests passed。
-  - `npm run check`：通过。
-- Gate 2 只读 reviewer 复核：
-  - reviewer agent id：`019e55c9-a3f0-7101-8d48-90a23cc9e26a`
-  - 结果：Gate 2 未通过；阻断点为本地持久化只实现 helper 和 child RPC/stderr live path，snapshot/task logs/conversation messages 未接入真实 run 链路。
-- 用户确认补充 Gate 2 修复范围：
-  - `packages/coding-agent/examples/rpc-task-console/run-manager.ts` 可作为写入范围。
-  - plan 已新增并勾选“Gate 2 修复补充: 接入真实 run 链路持久化”。
-- 委派 Gate 2 修复子代理：
-  - agent id：`019e5631-e7e4-7631-b4cc-0c25b6791244`
-  - 角色：`implementation_worker`
-  - 范围：`run-manager.ts`、`rpc-task-console.test.ts`
-  - 结果：子代理接入真实 run 链路持久化；主会话复核后接受，未提交 commit。
-- Gate 2 修复验证结果：
-  - `packages/coding-agent/test/rpc-task-console.test.ts`：59 tests passed。
-  - `npm run check`：通过。
-- Gate 2 修复后只读 reviewer 复核：
-  - reviewer agent id：`019e5636-7746-7160-ad64-ab69e3ce7b09`
-  - 结果：Gate 2 通过；剩余非阻断风险为 `.env.example` 示例滞后，以及 `prompt` success 不完成 task 缺少单独回归测试。
+- Task 6 残留风险: 未额外覆盖 `reset()` 与 replace/stop 同时发生的竞态；`RunManager.start()` 在 replace 场景会先返回 pending new run 元数据，但 snapshot 会停留在旧 run `stopping`，直到 cleanup 完成后才切到新 run，现有用例按该语义验证。
+- Task 7 残留风险: 当前验证以单元测试为主，覆盖 child 参数拼装、task-scoped MCP 过滤和 MCP 错误语义；尚未做真实 child Pi 进程 + 实际 extension 装载 + 真实 MCP server 的端到端集成验证。
+- Task 8 残留风险: `GET /`、`/styles.css`、`/app.js` 依赖服务端对现有 `index.html` 的内联 `<style>` / `<script>` 正则拆分和脚本改写；后续 UI 拆分时应改成真实静态文件，避免结构变更导致转换失效。
+- Task 8 残留风险: UI 的 selected `steps` 来源是最新 snapshot 的 current steps，满足本任务 route 事实源要求，但还不是独立前端选择模型。
+- Task 8 残留风险: `/runs/reset` 已覆盖带 `steps` body 的路径；空 body reset 行为尚未单独测试。若 Task 9 UI 增加 reset 控件，应明确是否发送当前 selected steps。
+- Gate 4 尚未执行；需等 Task 9 完成后累计复核 Task 8 + Task 9 的 HTTP/SSE API、前端 snapshot 渲染和 UI 行为。

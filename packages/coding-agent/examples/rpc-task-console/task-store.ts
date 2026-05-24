@@ -40,7 +40,7 @@ export function aggregateStepStatus(statuses: readonly TaskStatus[]): TaskStatus
 
 export class TaskStore {
 	private snapshot: TaskSnapshot;
-	private readonly planSteps: readonly PlanStep[];
+	private planSteps: readonly PlanStep[];
 	private readonly listeners = new Set<(snapshot: TaskSnapshot) => void>();
 
 	private constructor(planSteps: readonly PlanStep[], snapshot: TaskSnapshot) {
@@ -76,7 +76,13 @@ export class TaskStore {
 		};
 	}
 
-	startRun(runId: string, userInstruction: string, time: number): TaskSnapshot["run"] {
+	startRun(
+		runId: string,
+		userInstruction: string,
+		time: number,
+		planSteps: readonly PlanStep[] = this.planSteps,
+	): TaskSnapshot["run"] {
+		this.planSteps = clone(planSteps);
 		this.snapshot = {
 			run: {
 				id: runId,
@@ -103,8 +109,51 @@ export class TaskStore {
 		return this.getSnapshot().run;
 	}
 
+	markRunStopping(
+		runId: string,
+		reason: NonNullable<TaskSnapshot["run"]["stopReason"]>,
+		time: number,
+		replacementInstruction?: string,
+	): void {
+		if (runId !== this.snapshot.run.id || isTerminalRunStatus(this.snapshot.run.status)) {
+			return;
+		}
+		this.snapshot = {
+			...this.snapshot,
+			run: {
+				...this.snapshot.run,
+				status: "stopping",
+				stopReason: reason,
+				replacementInstruction,
+				finishedAt: undefined,
+				startedAt: this.snapshot.run.startedAt ?? time,
+			},
+		};
+		this.emit();
+	}
+
+	markRunStopped(runId: string, time: number): void {
+		if (runId !== this.snapshot.run.id) {
+			return;
+		}
+		this.snapshot = {
+			...this.snapshot,
+			run: {
+				...this.snapshot.run,
+				status: "stopped",
+				finishedAt: this.snapshot.run.finishedAt ?? time,
+			},
+		};
+		this.emit();
+	}
+
 	apply(event: TaskStoreEvent): void {
 		if (event.runId !== this.snapshot.run.id) {
+			this.snapshot = {
+				...this.snapshot,
+				logs: [...this.snapshot.logs, this.createIgnoredRunLog(event)],
+			};
+			this.emit();
 			return;
 		}
 
@@ -144,14 +193,18 @@ export class TaskStore {
 		const nextConversationMessages = mutation.conversationMessage
 			? [...this.snapshot.conversationMessages, mutation.conversationMessage]
 			: [...this.snapshot.conversationMessages];
-		const runStatus = aggregateRunStatus(nextSteps);
+		const computedRunStatus = aggregateRunStatus(nextSteps);
+		const runStatus = this.snapshot.run.status === "stopping" ? "stopping" : computedRunStatus;
 
 		this.snapshot = {
 			run: {
 				...this.snapshot.run,
 				status: runStatus,
 				steps: nextSteps,
-				finishedAt: this.snapshot.run.finishedAt ?? (isTerminalRunStatus(runStatus) ? event.time : undefined),
+				finishedAt:
+					runStatus === "stopping"
+						? this.snapshot.run.finishedAt
+						: (this.snapshot.run.finishedAt ?? (isTerminalRunStatus(runStatus) ? event.time : undefined)),
 			},
 			cards: nextCards,
 			logs: nextLogs,
@@ -161,7 +214,8 @@ export class TaskStore {
 		this.emit();
 	}
 
-	reset(time: number): void {
+	reset(time: number, planSteps: readonly PlanStep[] = this.planSteps): void {
+		this.planSteps = clone(planSteps);
 		this.snapshot = {
 			run: {
 				id: "idle",
@@ -172,7 +226,7 @@ export class TaskStore {
 			},
 			cards: [],
 			logs: [],
-			receipts: [{ id: `receipt-reset-${time}`, message: "已重置任务骨架", time, level: "info" }],
+			receipts: [],
 			conversationMessages: [],
 		};
 		this.emit();
@@ -231,6 +285,12 @@ export class TaskStore {
 				},
 			};
 		}
+		if (event.type === "task_attempt_failed") {
+			return {
+				task: base,
+				extraLogs: [],
+			};
+		}
 		if (event.type === "task_failed") {
 			return {
 				task: {
@@ -259,6 +319,9 @@ export class TaskStore {
 	private applyToAttempts(task: RuntimeTask, event: TaskStoreEvent): TaskAttempt[] {
 		const attempts = task.attempts.map((attempt) => ({ ...attempt }));
 		const attemptIndex = this.findAttemptIndex(attempts, event);
+		if (event.type === "task_stopped" && !hasAttemptMetadata(event) && attemptIndex < 0) {
+			return attempts;
+		}
 		const shouldCreateAttempt = event.type !== "task_log" || hasAttemptMetadata(event);
 		if (attemptIndex < 0 && !shouldCreateAttempt) {
 			return attempts;
@@ -280,8 +343,14 @@ export class TaskStore {
 			stopped: event.type === "task_stopped" ? event.stopped : existingAttempt?.stopped,
 			startedAt: existingAttempt?.startedAt ?? task.startedAt ?? event.time,
 			finishedAt: isTerminalAttemptEvent(event.type) ? event.time : existingAttempt?.finishedAt,
-			errorCode: event.type === "task_failed" ? event.error.code : existingAttempt?.errorCode,
-			errorMessage: event.type === "task_failed" ? event.error.message : existingAttempt?.errorMessage,
+			errorCode:
+				event.type === "task_attempt_failed" || event.type === "task_failed"
+					? event.error.code
+					: existingAttempt?.errorCode,
+			errorMessage:
+				event.type === "task_attempt_failed" || event.type === "task_failed"
+					? event.error.message
+					: existingAttempt?.errorMessage,
 		};
 
 		if (attemptIndex >= 0) {
@@ -309,6 +378,9 @@ export class TaskStore {
 			if (byAttemptNumber >= 0) {
 				return byAttemptNumber;
 			}
+		}
+		if (hasAttemptMetadata(event)) {
+			return -1;
 		}
 		const runningAttemptIndex = attempts.findIndex((attempt) => attempt.status === "running");
 		if (runningAttemptIndex >= 0) {
@@ -358,6 +430,23 @@ export class TaskStore {
 			message: `忽略迟到状态事件 ${event.type}：${owner}`,
 			time: event.time,
 			detail: event,
+		};
+	}
+
+	private createIgnoredRunLog(event: TaskStoreEvent): TaskLogEntry {
+		return {
+			id: `log-${this.snapshot.run.id}-${event.stepId}-${event.taskId}-${event.time}-ignored-run`,
+			runId: this.snapshot.run.id,
+			stepId: event.stepId,
+			taskId: event.taskId,
+			type: "diagnostic",
+			message: `忽略来自旧 run ${event.runId} 的迟到事件 ${describeStoreEvent(event)}：当前 run=${this.snapshot.run.id}`,
+			time: event.time,
+			detail: {
+				staleRunId: event.runId,
+				currentRunId: this.snapshot.run.id,
+				event,
+			},
 		};
 	}
 
@@ -491,13 +580,16 @@ function isStateEvent(event: TaskStoreEvent): boolean {
 	return (
 		event.type === "task_started" ||
 		event.type === "task_completed" ||
+		event.type === "task_attempt_failed" ||
 		event.type === "task_failed" ||
 		event.type === "task_stopped"
 	);
 }
 
 function isTerminalAttemptEvent(type: TaskStoreEvent["type"]): boolean {
-	return type === "task_completed" || type === "task_failed" || type === "task_stopped";
+	return (
+		type === "task_completed" || type === "task_attempt_failed" || type === "task_failed" || type === "task_stopped"
+	);
 }
 
 function resolveAttemptStatus(
@@ -509,6 +601,9 @@ function resolveAttemptStatus(
 	}
 	if (type === "task_completed") {
 		return "complete";
+	}
+	if (type === "task_attempt_failed") {
+		return "fail";
 	}
 	if (type === "task_failed") {
 		return "fail";
@@ -547,6 +642,9 @@ function taskEventMessage(type: TaskStoreEvent["type"]): string {
 	if (type === "task_completed") {
 		return "任务完成";
 	}
+	if (type === "task_attempt_failed") {
+		return "attempt 失败";
+	}
 	if (type === "task_failed") {
 		return "任务失败";
 	}
@@ -554,6 +652,19 @@ function taskEventMessage(type: TaskStoreEvent["type"]): string {
 		return "任务停止";
 	}
 	return "任务日志";
+}
+
+function describeStoreEvent(event: TaskStoreEvent): string {
+	if (event.type !== "task_log") {
+		return event.type;
+	}
+	const childEventType =
+		isRecord(event.detail) && typeof event.detail.type === "string" ? event.detail.type : undefined;
+	return childEventType ?? event.logType;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+	return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function clone<T>(value: T): T {

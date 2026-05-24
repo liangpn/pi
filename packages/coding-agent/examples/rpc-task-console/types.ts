@@ -260,6 +260,14 @@ export type TaskStoreEvent =
 			readonly time: number;
 	  } & TaskStoreDiagnosticFields)
 	| ({
+			readonly type: "task_attempt_failed";
+			readonly runId: string;
+			readonly stepId: string;
+			readonly taskId: string;
+			readonly error: TaskError;
+			readonly time: number;
+	  } & TaskStoreDiagnosticFields)
+	| ({
 			readonly type: "task_failed";
 			readonly runId: string;
 			readonly stepId: string;
