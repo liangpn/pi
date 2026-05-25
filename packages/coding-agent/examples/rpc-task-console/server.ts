@@ -11,6 +11,14 @@ import type { PlanStep, TaskSnapshot } from "./types.js";
 const exampleDir = dirname(fileURLToPath(import.meta.url));
 const staticDir = exampleDir;
 const indexHtmlPath = join(staticDir, "index.html");
+const stylesPath = join(staticDir, "styles.css");
+const appPath = join(staticDir, "app.js");
+const policeWorkflowPath = join(
+	exampleDir,
+	"../../../../docs/superpowers/specs/references/police-command-workflow.json",
+);
+const DEFAULT_POLICE_USER_INSTRUCTION =
+	"请以接警单编号 44010620260525085000433002 为目标，执行公安指挥处置 workflow，按阶段完成警情要素识别、基础研判、现场态势展开和出警资源可视化，并严格按各任务要求返回结果。";
 
 export interface RpcTaskConsoleServerOptions {
 	readonly runManager?: RunManager;
@@ -62,6 +70,14 @@ async function handleRequest(
 		request.on("close", () => {
 			sseClients.delete(response);
 		});
+		return;
+	}
+	if (request.method === "GET" && url.pathname === "/police-workflow.json") {
+		try {
+			writeJson(response, 200, await readPoliceWorkflowPayload());
+		} catch (error) {
+			writeJson(response, 500, { error: toErrorMessage(error) });
+		}
 		return;
 	}
 	if (request.method === "POST" && (url.pathname === "/runs/start" || url.pathname === "/api/run")) {
@@ -128,21 +144,15 @@ async function handleRequest(
 		return;
 	}
 	if (request.method === "GET" && (url.pathname === "/" || url.pathname === "/index.html")) {
-		const shell = await readUiShell();
-		response.writeHead(200, { "content-type": "text/html; charset=utf-8" });
-		response.end(shell.html);
+		await writeStaticFile(response, indexHtmlPath, "text/html; charset=utf-8");
 		return;
 	}
 	if (request.method === "GET" && url.pathname === "/styles.css") {
-		const shell = await readUiShell();
-		response.writeHead(200, { "content-type": "text/css; charset=utf-8" });
-		response.end(shell.styles);
+		await writeStaticFile(response, stylesPath, "text/css; charset=utf-8");
 		return;
 	}
 	if (request.method === "GET" && url.pathname === "/app.js") {
-		const shell = await readUiShell();
-		response.writeHead(200, { "content-type": "text/javascript; charset=utf-8" });
-		response.end(shell.app);
+		await writeStaticFile(response, appPath, "text/javascript; charset=utf-8");
 		return;
 	}
 	writeJson(response, 404, { error: "not found" });
@@ -252,74 +262,22 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 	return typeof value === "object" && value !== null;
 }
 
-interface UiShellAssets {
-	readonly html: string;
-	readonly styles: string;
-	readonly app: string;
+async function writeStaticFile(response: ServerResponse, path: string, contentType: string): Promise<void> {
+	const source = await readFile(path, "utf8");
+	response.writeHead(200, { "content-type": contentType });
+	response.end(source);
 }
 
-let uiShellPromise: Promise<UiShellAssets> | undefined;
-
-async function readUiShell(): Promise<UiShellAssets> {
-	uiShellPromise ??= buildUiShell();
-	return uiShellPromise;
-}
-
-async function buildUiShell(): Promise<UiShellAssets> {
-	const source = await readFile(indexHtmlPath, "utf8");
-	const styleMatch = source.match(/<style>([\s\S]*?)<\/style>/);
-	const scriptMatch = source.match(/<script>([\s\S]*?)<\/script>\s*<\/body>/);
-	if (!styleMatch || !scriptMatch) {
-		throw new Error("RPC task console index.html is missing inline shell assets");
-	}
-	const html = source
-		.replace(styleMatch[0], '<link rel="stylesheet" href="/styles.css" />')
-		.replace(scriptMatch[0], '    <script type="module" src="/app.js"></script>\n  </body>');
+async function readPoliceWorkflowPayload(): Promise<{
+	readonly steps: readonly PlanStep[];
+	readonly defaultUserInstruction: string;
+}> {
+	const source = await readFile(policeWorkflowPath, "utf8");
+	const parsed = JSON.parse(source) as readonly PlanStep[];
 	return {
-		html,
-		styles: styleMatch[1].trim(),
-		app: buildAppScript(scriptMatch[1]),
+		steps: validatePlanSteps(parsed),
+		defaultUserInstruction: DEFAULT_POLICE_USER_INSTRUCTION,
 	};
-}
-
-function buildAppScript(source: string): string {
-	return source
-		.replace("      const statusText = {", "      let latestSnapshot;\n\n      const statusText = {")
-		.replace(
-			'          void fetch("/api/run", {\n            method: "POST",\n            headers: { "content-type": "application/json" },\n            body: JSON.stringify({ instruction }),\n          });',
-			[
-				'          const runPath = latestSnapshot && latestSnapshot.run && latestSnapshot.run.status !== "idle"',
-				'            ? "/runs/replace"',
-				'            : "/runs/start";',
-				"          void fetch(runPath, {",
-				'            method: "POST",',
-				'            headers: { "content-type": "application/json" },',
-				"            body: JSON.stringify({ steps: getSelectedStepsPayload(), userInstruction: instruction }),",
-				"          });",
-			].join("\n"),
-		)
-		.replace(
-			'          void fetch("/api/stop", { method: "POST" });',
-			'          void fetch("/runs/stop", { method: "POST" });',
-		)
-		.replace("      void loadInitialSnapshot();\n      connectEvents();", "      connectEvents();")
-		.replace(/ {6}async function loadInitialSnapshot\(\) \{[\s\S]*?\n {6}\}\n\n/, "")
-		.replace(
-			"      function renderSnapshot(snapshot) {\n        renderMessages(snapshot);",
-			"      function renderSnapshot(snapshot) {\n        latestSnapshot = snapshot;\n        renderMessages(snapshot);",
-		)
-		.replace(
-			"      function renderMessages(snapshot) {",
-			[
-				"      function getSelectedStepsPayload() {",
-				"        const steps = latestSnapshot?.run?.steps;",
-				"        return Array.isArray(steps) ? steps : [];",
-				"      }",
-				"",
-				"      function renderMessages(snapshot) {",
-			].join("\n"),
-		)
-		.trimStart();
 }
 
 function toErrorMessage(error: unknown): string {

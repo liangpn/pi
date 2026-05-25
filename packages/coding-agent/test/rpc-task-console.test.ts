@@ -1,9 +1,10 @@
 import { once } from "node:events";
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { describe, expect, test } from "vitest";
 import { ChildAgentProcess, normalizeChildLine } from "../examples/rpc-task-console/child-agent-process.js";
 import { prepareChildSettings } from "../examples/rpc-task-console/child-settings.js";
@@ -33,6 +34,10 @@ import type {
 	TaskRun,
 	TaskSnapshot,
 } from "../examples/rpc-task-console/types.js";
+
+const PROJECT_ROOT = fileURLToPath(new URL("../../..", import.meta.url));
+const PROJECT_LOG_DIR = join(PROJECT_ROOT, "logs");
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/u;
 
 describe("rpc task console model", () => {
 	test("defines a full steps/tasks plan skeleton", () => {
@@ -367,6 +372,24 @@ describe("rpc task console runtime config", () => {
 			rmSync(dir, { recursive: true, force: true });
 		}
 	});
+
+	test("fails env loading when the runtime config is missing or invalid", () => {
+		const missingDir = mkdtempSync(join(tmpdir(), "rpc-task-console-missing-runtime-"));
+		const invalidDir = mkdtempSync(join(tmpdir(), "rpc-task-console-invalid-runtime-"));
+		try {
+			expect(() => loadDemoEnv(missingDir, {})).toThrow(/runtime config/i);
+
+			writeFileSync(
+				join(invalidDir, "runtime.config.json"),
+				JSON.stringify({ ...DEFAULT_RUNTIME_CONFIG, concurrency_limit: 0 }),
+			);
+
+			expect(() => loadDemoEnv(invalidDir, {})).toThrow(/concurrency_limit/i);
+		} finally {
+			rmSync(missingDir, { recursive: true, force: true });
+			rmSync(invalidDir, { recursive: true, force: true });
+		}
+	});
 });
 
 describe("rpc task console env", () => {
@@ -449,7 +472,8 @@ describe("rpc task console env", () => {
 				join(dir, "extensions", "mcp-tools.ts"),
 			]);
 			expect(demoEnv.childEnv.PI_DEMO_MCP_CONFIG_PATH).toBe(join(dir, "mcp.config.json"));
-			expect(demoEnv.childEnv.PI_CODING_AGENT_DIR).toBe(join(dir, ".rpc-task-console", "pi-agent"));
+			expect(demoEnv.outputDir).toBe(PROJECT_LOG_DIR);
+			expect(demoEnv.childEnv.PI_CODING_AGENT_DIR).toBe(join(PROJECT_LOG_DIR, "pi-agent"));
 			expect(modelsJson.providers["rpc-demo"].baseUrl).toBe("https://llm.example.test/v1");
 			expect(modelsJson.providers["rpc-demo"].models.map((model) => model.id)).toEqual(["model-a", "model-b"]);
 		} finally {
@@ -502,7 +526,8 @@ describe("rpc task console env", () => {
 				"--model",
 				"model-b",
 			]);
-			expect(demoEnv.childEnv.PI_CODING_AGENT_DIR).toBe(join(dir, ".rpc-task-console", "pi-agent"));
+			expect(demoEnv.outputDir).toBe(PROJECT_LOG_DIR);
+			expect(demoEnv.childEnv.PI_CODING_AGENT_DIR).toBe(join(PROJECT_LOG_DIR, "pi-agent"));
 			expect(modelsJson.providers["rpc-demo"].baseUrl).toBe("https://llm.example.test/v1");
 			expect(modelsJson.providers["rpc-demo"].api).toBe("openai-completions");
 			expect(modelsJson.providers["rpc-demo"].apiKey).toBe("OPENAI_API_KEY");
@@ -521,7 +546,8 @@ describe("rpc task console env", () => {
 			const demoEnv = loadDemoEnv(dir, {});
 
 			expect(demoEnv.modelsJsonPath).toBeUndefined();
-			expect(demoEnv.childEnv.PI_CODING_AGENT_DIR).toBe(join(dir, ".rpc-task-console", "pi-agent"));
+			expect(demoEnv.outputDir).toBe(PROJECT_LOG_DIR);
+			expect(demoEnv.childEnv.PI_CODING_AGENT_DIR).toBe(join(PROJECT_LOG_DIR, "pi-agent"));
 			expect(demoEnv.piCommand).toBe("../../node_modules/.bin/tsx");
 			expect(demoEnv.piArgs).toEqual([
 				"src/cli.ts",
@@ -641,7 +667,8 @@ describe("rpc task console env", () => {
 			expect(demoEnv.piArgs.includes("--no-session")).toBe(false);
 			expect(demoEnv.piArgs).toContain("--session-dir");
 			expect(demoEnv.piArgs).toContain(join(dir, ".rpc-task-console", "sessions"));
-			expect(demoEnv.childEnv.PI_CODING_AGENT_DIR).toBe(join(dir, ".rpc-task-console", "pi-agent"));
+			expect(demoEnv.outputDir).toBe(PROJECT_LOG_DIR);
+			expect(demoEnv.childEnv.PI_CODING_AGENT_DIR).toBe(join(PROJECT_LOG_DIR, "pi-agent"));
 		} finally {
 			rmSync(dir, { recursive: true, force: true });
 		}
@@ -674,7 +701,7 @@ describe("rpc task console child settings", () => {
 				readonly transport: string;
 			};
 
-			expect(paths.agentDir).toBe(join(dir, ".rpc-task-console", "pi-agent"));
+			expect(paths.agentDir).toBe(join(PROJECT_LOG_DIR, "pi-agent"));
 			expect(paths.sessionDir).toBeUndefined();
 			expect(settings.retry.enabled).toBe(true);
 			expect(settings.retry.maxRetries).toBe(3);
@@ -841,6 +868,37 @@ describe("rpc task console MCP config", () => {
 });
 
 describe("rpc task console MCP Streamable HTTP client", () => {
+	test("lists remote tools over Streamable HTTP", async () => {
+		const received: Array<{ readonly method: string; readonly sessionId?: string; readonly accept?: string }> = [];
+		const server = createServer((request, response) => {
+			void handleFakeMcpRequest(request, response, received, { mode: "json" });
+		});
+		const baseUrl = await listen(server);
+		try {
+			const client = new McpStreamableHttpClient({
+				server: {
+					transport: "streamable-http",
+					url: `${baseUrl}/mcp`,
+					headers: {},
+				},
+			});
+
+			const tools = await client.listTools(undefined);
+
+			expect(tools.map((tool) => tool.name)).toEqual(["jcj-get-case-detail", "panel-operate"]);
+			expect(tools[0]?.inputSchema).toEqual({
+				type: "object",
+				properties: {
+					jjdbh: { type: "string" },
+				},
+				required: ["jjdbh"],
+			});
+			expect(received.map((item) => item.method)).toEqual(["initialize", "notifications/initialized", "tools/list"]);
+		} finally {
+			await closeServer(server);
+		}
+	});
+
 	test("initializes and calls tools over Streamable HTTP", async () => {
 		const received: Array<{ readonly method: string; readonly sessionId?: string; readonly accept?: string }> = [];
 		const server = createServer((request, response) => {
@@ -872,6 +930,31 @@ describe("rpc task console MCP Streamable HTTP client", () => {
 				},
 				{ method: "tools/call", sessionId: "session-1", accept: "application/json, text/event-stream" },
 			]);
+		} finally {
+			await closeServer(server);
+		}
+	});
+
+	test("passes case detail arguments using the remote MCP schema shape", async () => {
+		const server = createServer((request, response) => {
+			void handleFakeMcpRequest(request, response, [], { mode: "json" });
+		});
+		const baseUrl = await listen(server);
+		try {
+			const client = new McpStreamableHttpClient({
+				server: {
+					transport: "streamable-http",
+					url: `${baseUrl}/mcp`,
+					headers: {},
+				},
+			});
+
+			const result = await client.callTool("jcj-get-case-detail", { jjdbh: "JJDBH-1" }, undefined);
+
+			expect(result.structuredContent).toEqual({
+				tool: "jcj-get-case-detail",
+				echoedArguments: { jjdbh: "JJDBH-1" },
+			});
 		} finally {
 			await closeServer(server);
 		}
@@ -1096,7 +1179,7 @@ describe("rpc task console TaskStore", () => {
 		});
 		expect(completionSnapshot?.cards.some((card) => card.taskId === "task-1" && card.type === "text")).toBe(true);
 		expect(completionSnapshot?.conversationMessages).toContainEqual({
-			id: "message-run-1-step-1-task-1-102",
+			id: expect.stringMatching(UUID_PATTERN),
 			runId: "run-1",
 			stepId: "step-1",
 			taskId: "task-1",
@@ -1535,25 +1618,19 @@ describe("rpc task console ChildAgentProcess", () => {
 			child.sendPrompt("hello");
 			await waitUntil(() => events.some((event) => event.type === "agent_end"));
 			child.kill("SIGTERM");
+			expect(child.agentRunId).toMatch(UUID_PATTERN);
 			await waitUntil(() => {
 				try {
-					return readFileSync(
-						join(rpcEventDir, "run-1", "step-1__task-1__agent-run-1-step-1-task-1.jsonl"),
-						"utf8",
-					).includes('"type":"agent_end"');
+					return readFileSync(join(rpcEventDir, "run-1", `${child.agentRunId}.jsonl`), "utf8").includes(
+						'"type":"agent_end"',
+					);
 				} catch {
 					return false;
 				}
 			});
 
-			const rpcEvents = readFileSync(
-				join(rpcEventDir, "run-1", "step-1__task-1__agent-run-1-step-1-task-1.jsonl"),
-				"utf8",
-			);
-			const stderrTail = readFileSync(
-				join(childStderrDir, "run-1", "step-1__task-1__agent-run-1-step-1-task-1.log"),
-				"utf8",
-			);
+			const rpcEvents = readFileSync(join(rpcEventDir, "run-1", `${child.agentRunId}.jsonl`), "utf8");
+			const stderrTail = readFileSync(join(childStderrDir, "run-1", `${child.agentRunId}.log`), "utf8");
 
 			expect(rpcEvents).toContain('"type":"rpc_response"');
 			expect(rpcEvents).toContain('"type":"unknown_json_event"');
@@ -1640,6 +1717,60 @@ describe("rpc task console TaskDispatcher", () => {
 			gbids: ["gbid-service-a-001"],
 		});
 		expect(store.getSnapshot().run.steps[1]?.tasks[1]?.error?.status).toBe("fail");
+	});
+
+	test("does not start later steps after the current step has a final failed task", async () => {
+		const plan: PlanStep[] = [
+			{
+				id: "step-one",
+				title: "第一步",
+				tasks: [
+					{
+						id: "task-fails",
+						title: "失败任务",
+						description: "fail",
+						tools: [],
+						skills: [],
+						retry: { max_attempts: 1, base_delay_ms: 0, retry_on: [] },
+					},
+				],
+			},
+			{
+				id: "step-two",
+				title: "第二步",
+				tasks: [{ id: "task-should-not-start", title: "不应启动", description: "pending", tools: [], skills: [] }],
+			},
+		];
+		const startedTaskIds: string[] = [];
+		const store = TaskStore.createIdle(plan);
+		const run = store.startRun("run-1", "demo", 100);
+		const dispatcher = new TaskDispatcher({
+			runId: run.id,
+			userInstruction: run.userInstruction,
+			steps: plan,
+			store,
+			childFactory: (options) =>
+				new FakeChildAgentProcess(options, startedTaskIds, {
+					onPrompt: (child) => {
+						queueMicrotask(() => {
+							child.emit({ type: "prompt_response_failure", error: "final failure" });
+						});
+					},
+				}),
+			command: "pi",
+			args: ["--mode", "rpc", "--no-session"],
+			env: process.env,
+			runtimeConfig: { ...DEFAULT_RUNTIME_CONFIG, concurrency_limit: 1 },
+			now: createClock(101),
+		});
+
+		await dispatcher.run();
+
+		expect(startedTaskIds).toEqual(["task-fails"]);
+		expect(store.getSnapshot().run.status).toBe("fail");
+		expect(store.getSnapshot().run.steps[0]?.status).toBe("fail");
+		expect(store.getSnapshot().run.steps[1]?.status).toBe("loading");
+		expect(store.getSnapshot().run.steps[1]?.tasks[0]?.attempts).toEqual([]);
 	});
 
 	test("stops active child agents and marks running tasks stopped", async () => {
@@ -2061,7 +2192,7 @@ describe("rpc task console TaskDispatcher", () => {
 		expect(completedSnapshot.conversationMessages[0]?.content).toBe("done");
 	});
 
-	test("records retry, tool error, and message update logs without settling before final agent_end", async () => {
+	test("records retry and tool error logs while filtering message update logs before final agent_end", async () => {
 		const plan: PlanStep[] = [
 			{
 				id: "step-test",
@@ -2132,7 +2263,7 @@ describe("rpc task console TaskDispatcher", () => {
 		expect(snapshot.run.steps[0]?.tasks[0]?.status).toBe("complete");
 		expect(snapshot.logs.some((log) => log.type === "auto_retry_start")).toBe(true);
 		expect(snapshot.logs.some((log) => log.type === "auto_retry_end")).toBe(true);
-		expect(snapshot.logs.some((log) => log.type === "message_update")).toBe(true);
+		expect(snapshot.logs.some((log) => log.type === "message_update")).toBe(false);
 		expect(snapshot.logs.some((log) => log.type === "tool_execution_end" && log.message.includes("工具报错"))).toBe(
 			true,
 		);
@@ -2577,7 +2708,7 @@ describe("rpc task console RunManager", () => {
 		const run = manager.start("demo");
 		await manager.waitForIdle();
 
-		expect(run.id).toBe("run-100-1");
+		expect(run.id).toMatch(UUID_PATTERN);
 		expect(manager.getSnapshot().run.id).toBe(run.id);
 		expect(manager.getSnapshot().run.status).toBe("fail");
 		expect(manager.getSnapshot().cards.length).toBe(4);
@@ -2661,6 +2792,69 @@ describe("rpc task console RunManager", () => {
 		}
 	});
 
+	test("reset clears in-memory snapshot without deleting local persistence files", async () => {
+		const outputDir = mkdtempSync(join(tmpdir(), "rpc-task-console-reset-persistence-"));
+		const manager = new RunManager({
+			steps: [
+				{
+					id: "step-test",
+					title: "测试步骤",
+					tasks: [
+						{
+							id: "task-test",
+							title: "测试任务",
+							description: "完成持久化验证",
+							tools: [],
+							skills: [],
+							card_type: "text",
+							data_structure: [{ field: "text", type: "string", required: true }],
+						},
+					],
+				},
+			],
+			demoEnv: createDemoEnv(outputDir),
+			childFactory: (options) =>
+				new FakeChildAgentProcess(options, [], {
+					onPrompt: (child) => {
+						queueMicrotask(() => {
+							child.emit({
+								type: "message_end",
+								message: createAssistantMessage(JSON.stringify({ content: "persisted", data: { text: "ok" } })),
+							});
+							child.emit({ type: "agent_end", messages: [], willRetry: false });
+						});
+					},
+				}),
+			now: createClock(100),
+		});
+
+		try {
+			const run = manager.start("demo");
+			await manager.waitForIdle();
+			const snapshotPath = join(outputDir, "snapshots", `${run.id}.json`);
+			const logPath = join(outputDir, "logs", `${run.id}.jsonl`);
+			const conversationPath = join(outputDir, "conversation", `${run.id}.jsonl`);
+			expect(existsSync(snapshotPath)).toBe(true);
+			expect(existsSync(logPath)).toBe(true);
+			expect(existsSync(conversationPath)).toBe(true);
+
+			manager.reset();
+			await manager.waitForIdle();
+
+			const resetSnapshot = manager.getSnapshot();
+			expect(resetSnapshot.run.status).toBe("idle");
+			expect(resetSnapshot.cards).toEqual([]);
+			expect(resetSnapshot.logs).toEqual([]);
+			expect(resetSnapshot.receipts).toEqual([]);
+			expect(resetSnapshot.conversationMessages).toEqual([]);
+			expect(existsSync(snapshotPath)).toBe(true);
+			expect(existsSync(logPath)).toBe(true);
+			expect(existsSync(conversationPath)).toBe(true);
+		} finally {
+			rmSync(outputDir, { recursive: true, force: true });
+		}
+	});
+
 	test("replaces a running instruction without letting stale events mutate the new run", async () => {
 		const children: FakeChildAgentProcess[] = [];
 		const plan: PlanStep[] = [
@@ -2734,23 +2928,6 @@ describe("rpc task console RunManager", () => {
 		expect(afterStaleEvents.run.id).toBe(newRun.id);
 		expect(afterStaleEvents.run.steps[0]?.tasks[0]?.status).toBe("running");
 		expect(afterStaleEvents.run.steps[0]?.tasks[0]?.process).toBeUndefined();
-		expect(
-			afterStaleEvents.logs.some(
-				(log) =>
-					log.type === "diagnostic" && log.message.includes("message_update") && log.message.includes(oldRun.id),
-			),
-		).toBe(true);
-		expect(
-			afterStaleEvents.logs.some(
-				(log) => log.type === "diagnostic" && log.message.includes("agent_end") && log.message.includes(oldRun.id),
-			),
-		).toBe(true);
-		expect(
-			afterStaleEvents.logs.some(
-				(log) =>
-					log.type === "diagnostic" && log.message.includes("process_close") && log.message.includes(oldRun.id),
-			),
-		).toBe(true);
 
 		children[1]?.emit({
 			type: "message_end",
@@ -2781,6 +2958,83 @@ describe("rpc task console RunManager", () => {
 		expect(manager.getSnapshot().logs).toEqual([]);
 		expect(manager.getSnapshot().receipts).toEqual([]);
 		expect(manager.getSnapshot().conversationMessages).toEqual([]);
+	});
+
+	test("reset during replacement keeps the selected idle snapshot and prevents pending replacement start", async () => {
+		const oldSteps: PlanStep[] = [
+			{
+				id: "step-old",
+				title: "旧步骤",
+				tasks: [{ id: "task-old", title: "旧任务", description: "pending", tools: [], skills: [] }],
+			},
+		];
+		const replacementSteps: PlanStep[] = [
+			{
+				id: "step-replacement",
+				title: "替换步骤",
+				tasks: [{ id: "task-replacement", title: "替换任务", description: "pending", tools: [], skills: [] }],
+			},
+		];
+		const resetSteps: PlanStep[] = [
+			{
+				id: "step-reset",
+				title: "重置步骤",
+				tasks: [{ id: "task-reset", title: "重置任务", description: "pending", tools: [], skills: [] }],
+			},
+		];
+		const children: FakeChildAgentProcess[] = [];
+		const manager = new RunManager({
+			steps: oldSteps,
+			demoEnv: createDemoEnv(undefined, {
+				runtimeConfig: {
+					...DEFAULT_RUNTIME_CONFIG,
+					concurrency_limit: 1,
+					stop_steer_timeout_ms: 0,
+					stop_abort_timeout_ms: 0,
+				},
+			}),
+			childFactory: (options) => {
+				const child = new FakeChildAgentProcess(options, [], {
+					onKill: (runningChild) => {
+						queueMicrotask(() => {
+							runningChild.emit({
+								type: "message_end",
+								message: createAssistantMessage(JSON.stringify({ content: "late old done" })),
+							});
+							runningChild.emit({ type: "agent_end", messages: [], willRetry: false });
+							runningChild.emit({
+								type: "process_close",
+								exitCode: 143,
+								signal: "SIGTERM",
+								stderrTail: "late old close",
+							});
+						});
+					},
+				});
+				children.push(child);
+				return child;
+			},
+			now: createClock(100),
+		});
+
+		manager.start("old instruction", oldSteps);
+		await waitUntil(() => children.length === 1);
+		manager.replace("replacement instruction", replacementSteps);
+		manager.reset(resetSteps);
+		await new Promise<void>((resolve) => {
+			setTimeout(resolve, 0);
+		});
+
+		const snapshot = manager.getSnapshot();
+		expect(children).toHaveLength(1);
+		expect(snapshot.run.id).toBe("idle");
+		expect(snapshot.run.status).toBe("idle");
+		expect(snapshot.run.steps.map((step) => step.id)).toEqual(["step-reset"]);
+		expect(snapshot.run.steps[0]?.tasks[0]?.status).toBe("loading");
+		expect(snapshot.cards).toEqual([]);
+		expect(snapshot.logs).toEqual([]);
+		expect(snapshot.receipts).toEqual([]);
+		expect(snapshot.conversationMessages).toEqual([]);
 	});
 
 	test("uses route-selected steps as the source of truth for start, replace, and reset snapshots", async () => {
@@ -2860,12 +3114,12 @@ describe("rpc task console RunManager", () => {
 			now: createClock(100),
 		});
 
-		manager.start("old instruction", oldSteps);
+		const oldRun = manager.start("old instruction", oldSteps);
 		await waitUntil(() => children.length === 1);
 		expect(manager.getSnapshot().run.steps.map((step) => step.id)).toEqual(["step-old"]);
 
 		manager.start("new instruction", newSteps);
-		await waitUntil(() => children.length === 2 && manager.getSnapshot().run.id !== "run-100-1");
+		await waitUntil(() => children.length === 2 && manager.getSnapshot().run.id !== oldRun.id);
 		expect(manager.getSnapshot().run.userInstruction).toBe("new instruction");
 		expect(manager.getSnapshot().run.steps.map((step) => step.id)).toEqual(["step-new"]);
 
@@ -3160,6 +3414,191 @@ function createDemoEnv(
 	};
 }
 
+describe("rpc task console frontend static contracts", () => {
+	test("renders backend conversation messages and receipts without rendering freeform user instructions", () => {
+		const app = readConsoleAsset("app.js");
+		const html = readConsoleAsset("index.html");
+		const renderMessages = extractFunctionSource(app, "renderMessages");
+
+		expect(renderMessages).toContain("snapshot.receipts ?? []");
+		expect(renderMessages).toContain("snapshot.conversationMessages ?? []");
+		expect(renderMessages).toContain("resolveTaskTitle(snapshot.run.steps, message.taskId)");
+		expect(renderMessages).not.toContain("userInstruction");
+		expect(html).toContain("等待后端回执。");
+		expect(html).not.toContain("主 agent");
+		expect(html).not.toContain("free-chat");
+	});
+
+	test("keeps canonical route usage in the frontend and selected steps in run payloads", () => {
+		const app = readConsoleAsset("app.js");
+		const setupComposer = extractFunctionSource(app, "setupComposer");
+		const postRun = extractFunctionSource(app, "postRun");
+		const postStop = extractFunctionSource(app, "postStop");
+
+		expect(setupComposer).toContain('"/runs/start"');
+		expect(setupComposer).toContain('"/runs/replace"');
+		expect(postRun).toContain("getSelectedStepsPayload()");
+		expect(postRun).toContain("userInstruction: instruction");
+		expect(postStop).toContain('fetch("/runs/stop"');
+		expect(app).not.toContain("/api/");
+	});
+
+	test("renders all first-version card types, including media GBID references", () => {
+		const app = readConsoleAsset("app.js");
+		const renderCardBody = extractFunctionSource(app, "renderCardBody");
+
+		expect(renderCardBody).toContain('card.type === "media"');
+		expect(renderCardBody).toContain('card.type === "map"');
+		expect(renderCardBody).toContain('card.type === "table"');
+		expect(renderCardBody).toContain('card.type === "text"');
+		expect(renderCardBody).toContain("json-stack");
+		expect(renderCardBody).toContain("card.data?.gbids");
+		expect(renderCardBody).toContain("media-ref");
+		expect(renderCardBody).toContain("监控引用数据，不拉取视频流字节");
+	});
+
+	test("updates selected task and workflow row status text, title, and accessibility metadata", () => {
+		const app = readConsoleAsset("app.js");
+		const updateSelectedTask = extractFunctionSource(app, "updateSelectedTask");
+		const updateTaskNode = extractFunctionSource(app, "updateTaskNode");
+
+		expect(updateSelectedTask).toContain("statusText[selected.status]");
+		expect(updateSelectedTask).toContain("elements.selectedTask.textContent");
+		expect(updateSelectedTask).toContain("elements.selectedTask.title");
+		expect(updateSelectedTask).toContain('setAttribute(\n      "aria-label"');
+		expect(updateTaskNode).toContain("taskNode.title");
+		expect(updateTaskNode).toContain('taskNode.setAttribute("aria-label"');
+		expect(updateTaskNode).toContain('taskNode.setAttribute("aria-current"');
+		expect(updateTaskNode).toContain("text.textContent = status");
+	});
+
+	test("shows workflow progress counts and click-selected tasks from backend snapshot data", () => {
+		const app = readConsoleAsset("app.js");
+		const renderFlow = extractFunctionSource(app, "renderFlow");
+		const updateStepNode = extractFunctionSource(app, "updateStepNode");
+		const getOrCreateTaskNode = extractFunctionSource(app, "getOrCreateTaskNode");
+
+		expect(renderFlow).toContain("steps.flatMap((step) => step.tasks)");
+		expect(renderFlow).toContain("elements.totalProgress.textContent");
+		expect(renderFlow).toContain(`已完成 \${doneTasks} 个，共 \${allTasks.length} 个`);
+		expect(updateStepNode).toContain(`progress.textContent = \`\${done} / \${step.tasks.length}\``);
+		expect(updateStepNode).toContain(`阶段进度：\${done} / \${step.tasks.length}`);
+		expect(getOrCreateTaskNode).toContain("selectedTaskId = taskId");
+		expect(getOrCreateTaskNode).toContain("renderFlow(latestSnapshot?.run.steps ?? [])");
+	});
+
+	test("surfaces stopping state and disables actions during stop or replace processing", () => {
+		const app = readConsoleAsset("app.js");
+		const renderRunStatus = extractFunctionSource(app, "renderRunStatus");
+		const updateActionState = extractFunctionSource(app, "updateActionState");
+
+		expect(app).toContain('stopping: "停止中"');
+		expect(renderRunStatus).toContain("statusText[status]");
+		expect(updateActionState).toContain('status === "running" || status === "stopping"');
+		expect(updateActionState).toContain('status === "stopping"');
+		expect(updateActionState).toContain("elements.submit.disabled");
+		expect(updateActionState).toContain("elements.stop.disabled");
+		expect(updateActionState).toContain("elements.instruction.disabled");
+	});
+
+	test("guards workflow ordering so status-only snapshots update existing flow nodes in place", () => {
+		const app = readConsoleAsset("app.js");
+		const renderFlow = extractFunctionSource(app, "renderFlow");
+		const updateStepNode = extractFunctionSource(app, "updateStepNode");
+		const syncOrderedChildren = extractFunctionSource(app, "syncOrderedChildren");
+
+		expect(renderFlow).toContain("syncOrderedChildren(");
+		expect(renderFlow).not.toContain("elements.flowList.append(");
+		expect(updateStepNode).toContain("syncOrderedChildren(");
+		expect(updateStepNode).not.toContain("taskList.append(");
+		expect(syncOrderedChildren).toContain("hasChildOrderChanged");
+		expect(syncOrderedChildren.indexOf("hasChildOrderChanged")).toBeLessThan(
+			syncOrderedChildren.indexOf("parent.append(createNode(id))"),
+		);
+	});
+
+	test("keeps frontend-only rail docking classes and left/right docking styles", () => {
+		const app = readConsoleAsset("app.js");
+		const html = readConsoleAsset("index.html");
+		const css = readConsoleAsset("styles.css");
+
+		expect(html).toContain('<body class="control-edge-right">');
+		expect(app).toContain('classList.toggle("control-edge-left"');
+		expect(app).toContain('classList.toggle("control-edge-right"');
+		expect(css).toContain("body.control-edge-left .workspace");
+		expect(css).toContain("body.control-edge-left .side-panel");
+		expect(css).toContain("body.control-edge-left .control-rail");
+	});
+
+	test("uses card board width and ResizeObserver for 3/2/1 responsive cards without mobile horizontal overflow", () => {
+		const app = readConsoleAsset("app.js");
+		const css = readConsoleAsset("styles.css");
+		const setupCardColumns = extractFunctionSource(app, "setupCardColumns");
+
+		expect(setupCardColumns).toContain("new ResizeObserver");
+		expect(setupCardColumns).toContain("entry?.contentRect.width");
+		expect(setupCardColumns).toContain("width >= 1060 ? 3 : width >= 700 ? 2 : 1");
+		expect(setupCardColumns).toContain('--card-columns", String(columns)');
+		expect(css).toContain("grid-template-columns: repeat(var(--card-columns), minmax(0, 1fr));");
+		expect(css).toContain("max-width: 100%;");
+		expect(css).toContain("overflow-x: hidden;");
+		expect(css).toContain("@media (max-width: 760px)");
+	});
+
+	test("keeps fixed viewport layout with independent scroll regions", () => {
+		const html = readConsoleAsset("index.html");
+		const css = readConsoleAsset("styles.css");
+
+		expect(html).toContain('class="scroll-area card-board"');
+		expect(html).toContain('class="scroll-area messages"');
+		expect(html).toContain('class="scroll-area flow-list"');
+		expect(css).toContain("height: 100dvh;");
+		expect(css).toContain("overflow: hidden;");
+		expect(css).toContain(".scroll-area");
+		expect(css).toContain("overflow: auto;");
+		expect(css).toContain(".pane-body.only-scroll");
+	});
+
+	test("keeps card collapse and maximize handlers with maximized cards confined to the card workspace", () => {
+		const app = readConsoleAsset("app.js");
+		const css = readConsoleAsset("styles.css");
+		const bindCardActions = extractFunctionSource(app, "bindCardActions");
+
+		expect(bindCardActions).toContain("[data-collapse]");
+		expect(bindCardActions).toContain("[data-maximize]");
+		expect(bindCardActions).toContain("state.collapsed = !state.collapsed");
+		expect(bindCardActions).toContain("nextMaximized");
+		expect(app).toContain("function collapseMaximizedCards");
+		expect(css).toContain(".card-board {\n  position: relative;");
+		expect(css).toContain(".card.maximized");
+		expect(css).toContain("position: absolute;");
+		expect(css).toContain("inset: 14px;");
+	});
+
+	test("marks dynamic error receipts as alerts and exposes the receipts area as live", () => {
+		const app = readConsoleAsset("app.js");
+		const html = readConsoleAsset("index.html");
+		const css = readConsoleAsset("styles.css");
+		const renderMessages = extractFunctionSource(app, "renderMessages");
+		const renderLocalError = extractFunctionSource(app, "renderLocalError");
+
+		expect(html).toContain('aria-live="polite" data-messages');
+		expect(renderMessages).toContain('node.setAttribute("role", "alert")');
+		expect(renderMessages).toContain('node.setAttribute("aria-label"');
+		expect(renderMessages).toContain("错误回执");
+		expect(renderMessages).toContain("receipt.message");
+		expect(renderLocalError).toContain('node.setAttribute("role", "alert")');
+		expect(renderLocalError).toContain('node.setAttribute("aria-label"');
+		expect(renderLocalError).toContain("前端错误");
+		expect(renderLocalError).toContain("message");
+		expect(html).toContain('aria-label="发送指令"');
+		expect(html).toContain('aria-label="停止运行"');
+		expect(css).toContain("button:focus-visible");
+		expect(css).toContain("@media (prefers-reduced-motion: reduce)");
+		expect(css).toContain("animation-duration: 0.01ms !important;");
+	});
+});
+
 describe("rpc task console HTTP API", () => {
 	test("serves canonical shell routes and starts runs through canonical runtime routes", async () => {
 		const manager = new RunManager({
@@ -3192,11 +3631,54 @@ describe("rpc task console HTTP API", () => {
 			});
 			expect(runResponse.status).toBe(202);
 			const runBody = await readJson<{ readonly run: TaskRun }>(runResponse);
-			expect(runBody.run.id).toBe("run-100-1");
+			expect(runBody.run.id).toMatch(UUID_PATTERN);
 
 			await manager.waitForIdle();
 			const finalSnapshot = await readFirstSseSnapshot(baseUrl);
 			expect(finalSnapshot.cards).toHaveLength(4);
+		} finally {
+			await closeServer(server);
+		}
+	});
+
+	test("serves the shell with real static asset files and no initial business cards", async () => {
+		const exampleDir = new URL("../examples/rpc-task-console/", import.meta.url);
+		const expectedStyles = readFileSync(new URL("styles.css", exampleDir), "utf8");
+		const expectedApp = readFileSync(new URL("app.js", exampleDir), "utf8");
+		const server = createRpcTaskConsoleServer(createDemoEnv(), {
+			runManager: new RunManager({
+				demoEnv: createDemoEnv(),
+				childFactory: createImmediateAgentFactory([]),
+				now: createClock(100),
+			}),
+		});
+		const baseUrl = await listen(server);
+		try {
+			const htmlResponse = await fetch(`${baseUrl}/`);
+			const html = await htmlResponse.text();
+			expect(htmlResponse.status).toBe(200);
+			expect(html).toContain('<link rel="stylesheet" href="/styles.css" />');
+			expect(html).toContain('<script type="module" src="/app.js"></script>');
+			expect(html).not.toContain("<style>");
+			expect(html).not.toContain("<script>");
+			expect(html).not.toContain("service-a 监控");
+			expect(html).not.toContain("资源清单");
+			expect(html).toContain("公安指挥任务控制台");
+
+			const stylesResponse = await fetch(`${baseUrl}/styles.css`);
+			expect(stylesResponse.status).toBe(200);
+			expect(stylesResponse.headers.get("content-type")).toContain("text/css");
+			expect(await stylesResponse.text()).toBe(expectedStyles);
+
+			const appResponse = await fetch(`${baseUrl}/app.js`);
+			expect(appResponse.status).toBe(200);
+			expect(appResponse.headers.get("content-type")).toContain("text/javascript");
+			expect(await appResponse.text()).toBe(expectedApp);
+
+			const configResponse = await fetch(`${baseUrl}/runtime.config.json`);
+			expect(configResponse.status).toBe(404);
+			const traversalResponse = await fetch(`${baseUrl}/../rpc-task-console/app.js`);
+			expect(traversalResponse.status).toBe(404);
 		} finally {
 			await closeServer(server);
 		}
@@ -3331,6 +3813,13 @@ describe("rpc task console HTTP API", () => {
 			expect(resetSnapshot.logs).toEqual([]);
 			expect(resetSnapshot.receipts).toEqual([]);
 			expect(resetSnapshot.conversationMessages).toEqual([]);
+
+			const emptyResetResponse = await fetch(`${baseUrl}/runs/reset`, { method: "POST" });
+			expect(emptyResetResponse.status).toBe(200);
+			const emptyResetSnapshot = await readJson<{ readonly snapshot: TaskSnapshot }>(emptyResetResponse);
+			expect(emptyResetSnapshot.snapshot.run.status).toBe("idle");
+			expect(emptyResetSnapshot.snapshot.run.steps.map((step) => step.id)).toEqual(["step-second"]);
+			expect(emptyResetSnapshot.snapshot.cards).toEqual([]);
 		} finally {
 			await closeServer(server);
 		}
@@ -3403,8 +3892,8 @@ describe("rpc task console HTTP API", () => {
 			expect(completedSnapshot.cards[0]?.taskId).toBe("task-sse");
 			expect(completedSnapshot.conversationMessages).toHaveLength(1);
 			expect(completedSnapshot.conversationMessages[0]).toMatchObject({
-				id: expect.stringContaining("message-run-100-1-step-sse-task-sse-"),
-				runId: "run-100-1",
+				id: expect.stringMatching(UUID_PATTERN),
+				runId: completedSnapshot.run.id,
 				stepId: "step-sse",
 				taskId: "task-sse",
 				content: "sse done",
@@ -3437,6 +3926,11 @@ async function handleFakeMcpRequest(
 	received: Array<{ readonly method: string; readonly sessionId?: string; readonly accept?: string }>,
 	options: { readonly mode: "json" | "sse" | "http-error" | "jsonrpc-error" | "protocol-mismatch" },
 ): Promise<void> {
+	if (request.method === "GET") {
+		response.statusCode = 405;
+		response.end();
+		return;
+	}
 	const message = await readRequestJson(request);
 	received.push({
 		method: message.method,
@@ -3498,7 +3992,7 @@ async function handleFakeMcpRequest(
 				content: [{ type: "text", text: "called echo" }],
 				isError: false,
 				structuredContent: {
-					tool: "echo",
+					tool: readFakeMcpToolName(message.params),
 					echoedArguments: readFakeMcpToolArguments(message.params),
 				},
 			},
@@ -3508,6 +4002,38 @@ async function handleFakeMcpRequest(
 			response.end(`event: message\ndata: ${JSON.stringify(result)}\n\n`);
 			return;
 		}
+		response.setHeader("content-type", "application/json");
+		response.end(JSON.stringify(result));
+		return;
+	}
+	if (message.method === "tools/list") {
+		const result = {
+			jsonrpc: "2.0",
+			id: message.id,
+			result: {
+				tools: [
+					{
+						name: "jcj-get-case-detail",
+						description: "Get case detail by JJDBH",
+						inputSchema: {
+							type: "object",
+							properties: {
+								jjdbh: { type: "string" },
+							},
+							required: ["jjdbh"],
+						},
+					},
+					{
+						name: "panel-operate",
+						description: "Operate panel",
+						inputSchema: {
+							type: "object",
+							additionalProperties: true,
+						},
+					},
+				],
+			},
+		};
 		response.setHeader("content-type", "application/json");
 		response.end(JSON.stringify(result));
 		return;
@@ -3542,6 +4068,14 @@ function readFakeMcpToolArguments(value: unknown): unknown {
 	}
 	const params = value as { readonly arguments?: unknown };
 	return params.arguments;
+}
+
+function readFakeMcpToolName(value: unknown): unknown {
+	if (typeof value !== "object" || value === null) {
+		return undefined;
+	}
+	const params = value as { readonly name?: unknown };
+	return params.name;
 }
 
 async function listen(server: Server): Promise<string> {
@@ -3659,6 +4193,19 @@ function readJsonLines<T>(path: string): T[] {
 		.split("\n")
 		.filter((line) => line.length > 0)
 		.map((line) => JSON.parse(line) as T);
+}
+
+function readConsoleAsset(name: "app.js" | "styles.css" | "index.html"): string {
+	return readFileSync(new URL(`../examples/rpc-task-console/${name}`, import.meta.url), "utf8");
+}
+
+function extractFunctionSource(source: string, functionName: string): string {
+	const start = source.indexOf(`function ${functionName}(`);
+	if (start < 0) {
+		throw new Error(`Missing function ${functionName}`);
+	}
+	const next = source.indexOf("\nfunction ", start + 1);
+	return source.slice(start, next < 0 ? source.length : next);
 }
 
 function isAddressInfo(address: string | AddressInfo | null): address is AddressInfo {

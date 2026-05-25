@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { PI_DEMO_TASK_ALLOWED_TOOLS_ENV } from "./env.js";
 import { buildTaskPrompt } from "./prompt-builder.js";
 import {
@@ -174,7 +175,7 @@ export class TaskDispatcher {
 					runId: this.options.runId,
 					stepId: step.id,
 					taskId: task.id,
-					...createAttemptDiagnostics(outcome.activeTask, task.id, outcome.activeTask.command),
+					...createAttemptDiagnostics(outcome.activeTask, outcome.activeTask.command),
 					process: outcome.process,
 					error: outcome.error,
 					time: this.options.now(),
@@ -187,7 +188,7 @@ export class TaskDispatcher {
 				runId: this.options.runId,
 				stepId: step.id,
 				taskId: task.id,
-				...createAttemptDiagnostics(outcome.activeTask, task.id, outcome.activeTask.command),
+				...createAttemptDiagnostics(outcome.activeTask, outcome.activeTask.command),
 				process: outcome.process,
 				error: outcome.error,
 				time: this.options.now(),
@@ -200,7 +201,7 @@ export class TaskDispatcher {
 
 	private runAttempt(step: PlanStep, task: PlanTask, attempt: number, maxToolCalls: number): Promise<AttemptOutcome> {
 		return new Promise((resolve) => {
-			const attemptId = createAttemptId(task.id, attempt);
+			const attemptId = randomUUID();
 			const child = this.options.childFactory({
 				runId: this.options.runId,
 				stepId: step.id,
@@ -218,7 +219,7 @@ export class TaskDispatcher {
 				child,
 				attemptId,
 				attempt,
-				agentRunId: `${child.agentRunId}-attempt-${attempt}`,
+				agentRunId: child.agentRunId,
 				command: [this.options.command, ...this.options.args],
 				sessionDir: readSessionDir(this.options.env),
 				toolCallCount: 0,
@@ -294,7 +295,7 @@ export class TaskDispatcher {
 					runId: this.options.runId,
 					stepId: step.id,
 					taskId: task.id,
-					...createAttemptDiagnostics(activeTask, task.id, activeTask.command, activeTask.child),
+					...createAttemptDiagnostics(activeTask, activeTask.command, activeTask.child),
 					agent: createAgentMetadata(activeTask.command, activeTask.processId, activeTask.sessionDir),
 					toolCallCount: activeTask.toolCallCount,
 					time: this.options.now(),
@@ -305,7 +306,7 @@ export class TaskDispatcher {
 				runId: this.options.runId,
 				stepId: step.id,
 				taskId: task.id,
-				...createAttemptDiagnostics(activeTask, task.id, activeTask.command, activeTask.child),
+				...createAttemptDiagnostics(activeTask, activeTask.command, activeTask.child),
 				agent: createAgentMetadata(activeTask.command, activeTask.processId, activeTask.sessionDir),
 				toolCallCount: activeTask.toolCallCount,
 				logType: "child_spawned",
@@ -322,7 +323,7 @@ export class TaskDispatcher {
 				runId: this.options.runId,
 				stepId: step.id,
 				taskId: task.id,
-				...createAttemptDiagnostics(activeTask, task.id, activeTask.command, activeTask.child),
+				...createAttemptDiagnostics(activeTask, activeTask.command, activeTask.child),
 				toolCallCount: activeTask.toolCallCount,
 				logType: "prompt_response_failure",
 				message: event.error ?? "子进程拒绝了 prompt 请求",
@@ -354,7 +355,7 @@ export class TaskDispatcher {
 				runId: this.options.runId,
 				stepId: step.id,
 				taskId: task.id,
-				...createAttemptDiagnostics(activeTask, task.id, activeTask.command, activeTask.child),
+				...createAttemptDiagnostics(activeTask, activeTask.command, activeTask.child),
 				process,
 				toolCallCount: activeTask.toolCallCount,
 				logType: "process_close",
@@ -383,7 +384,7 @@ export class TaskDispatcher {
 				runId: this.options.runId,
 				stepId: step.id,
 				taskId: task.id,
-				...createAttemptDiagnostics(activeTask, task.id, activeTask.command, activeTask.child),
+				...createAttemptDiagnostics(activeTask, activeTask.command, activeTask.child),
 				process: activeTask.process,
 				toolCallCount: activeTask.toolCallCount,
 				logType: "process_error",
@@ -436,7 +437,7 @@ export class TaskDispatcher {
 							runId: this.options.runId,
 							stepId: step.id,
 							taskId: task.id,
-							...createAttemptDiagnostics(activeTask, task.id, activeTask.command, activeTask.child),
+							...createAttemptDiagnostics(activeTask, activeTask.command, activeTask.child),
 							toolCallCount: activeTask.toolCallCount,
 							logType: "validation_error",
 							message: validationError.message,
@@ -574,7 +575,7 @@ export class TaskDispatcher {
 			runId: this.options.runId,
 			stepId,
 			taskId,
-			...createAttemptDiagnostics(activeTask, taskId, activeTask.command, activeTask.child),
+			...createAttemptDiagnostics(activeTask, activeTask.command, activeTask.child),
 			process: activeTask.process,
 			toolCallCount: activeTask.toolCallCount,
 			result,
@@ -613,7 +614,7 @@ export class TaskDispatcher {
 			runId: this.options.runId,
 			stepId: activeTask.stepId,
 			taskId: activeTask.taskId,
-			...createAttemptDiagnostics(activeTask, activeTask.taskId, activeTask.command, activeTask.child),
+			...createAttemptDiagnostics(activeTask, activeTask.command, activeTask.child),
 			process: activeTask.process,
 			toolCallCount: activeTask.toolCallCount,
 			stopped: createStoppedState(reason, requestedReason),
@@ -646,7 +647,7 @@ export class TaskDispatcher {
 					runId: this.options.runId,
 					stepId: activeTask.stepId,
 					taskId: activeTask.taskId,
-					...createAttemptDiagnostics(activeTask, activeTask.taskId, activeTask.command, activeTask.child),
+					...createAttemptDiagnostics(activeTask, activeTask.command, activeTask.child),
 					process: activeTask.process,
 					toolCallCount: activeTask.toolCallCount,
 					logType: "diagnostic",
@@ -732,12 +733,15 @@ export class TaskDispatcher {
 	}
 
 	private logChildEvent(stepId: string, taskId: string, activeTask: ActiveTask, event: NormalizedChildEvent): void {
+		if (!shouldLogChildEvent(event)) {
+			return;
+		}
 		this.options.store.apply({
 			type: "task_log",
 			runId: this.options.runId,
 			stepId,
 			taskId,
-			...createAttemptDiagnostics(activeTask, taskId, activeTask.command, activeTask.child),
+			...createAttemptDiagnostics(activeTask, activeTask.command, activeTask.child),
 			process: activeTask.process,
 			toolCallCount: activeTask.toolCallCount,
 			logType: event.type,
@@ -753,7 +757,7 @@ export class TaskDispatcher {
 			runId: this.options.runId,
 			stepId: activeTask.stepId,
 			taskId: activeTask.taskId,
-			...createAttemptDiagnostics(activeTask, activeTask.taskId, activeTask.command, activeTask.child),
+			...createAttemptDiagnostics(activeTask, activeTask.command, activeTask.child),
 			process: activeTask.process,
 			toolCallCount: activeTask.toolCallCount,
 			logType: "diagnostic",
@@ -774,12 +778,12 @@ export class TaskDispatcher {
 			runId: this.options.runId,
 			stepId,
 			taskId,
-			...createAttemptDiagnostics(activeTask, taskId, activeTask.command, activeTask.child),
+			...createAttemptDiagnostics(activeTask, activeTask.command, activeTask.child),
 			process: activeTask.process,
 			toolCallCount: activeTask.toolCallCount,
 			logType: "diagnostic",
 			message: `忽略迟到 child 事件 ${event.type}：attempt 已完成`,
-			detail: event,
+			detail: { eventType: event.type },
 			time: this.options.now(),
 		});
 	}
@@ -795,7 +799,7 @@ export class TaskDispatcher {
 			runId: this.options.runId,
 			stepId: activeTask.stepId,
 			taskId: activeTask.taskId,
-			...createAttemptDiagnostics(activeTask, activeTask.taskId, activeTask.command, activeTask.child),
+			...createAttemptDiagnostics(activeTask, activeTask.command, activeTask.child),
 			process: activeTask.process,
 			toolCallCount: activeTask.toolCallCount,
 			logType: "diagnostic",
@@ -810,7 +814,7 @@ export class TaskDispatcher {
 			runId: this.options.runId,
 			stepId: activeTask.stepId,
 			taskId: activeTask.taskId,
-			...createAttemptDiagnostics(activeTask, activeTask.taskId, activeTask.command, activeTask.child),
+			...createAttemptDiagnostics(activeTask, activeTask.command, activeTask.child),
 			process: activeTask.process,
 			toolCallCount: activeTask.toolCallCount,
 			logType: "diagnostic",
@@ -873,10 +877,6 @@ interface ActiveTask {
 	cleanupCompleted?: boolean;
 }
 
-function createAttemptId(taskId: string, attempt: number): string {
-	return `${taskId}-attempt-${attempt}`;
-}
-
 function createAgentMetadata(command: readonly string[], processId?: number, sessionDir?: string) {
 	return {
 		command,
@@ -887,7 +887,6 @@ function createAgentMetadata(command: readonly string[], processId?: number, ses
 
 function createAttemptDiagnostics(
 	activeTask: ActiveTask | undefined,
-	taskId: string,
 	command: readonly string[],
 	child?: ChildAgentProcessLike,
 ) {
@@ -896,8 +895,6 @@ function createAttemptDiagnostics(
 			return {};
 		}
 		return {
-			attemptId: createAttemptId(taskId, 1),
-			attempt: 1,
 			agentRunId: child.agentRunId,
 			agent: createAgentMetadata(command, child.processId),
 		};
@@ -908,6 +905,10 @@ function createAttemptDiagnostics(
 		agentRunId: activeTask.agentRunId,
 		agent: createAgentMetadata(activeTask.command, activeTask.processId ?? child?.processId, activeTask.sessionDir),
 	};
+}
+
+function shouldLogChildEvent(event: NormalizedChildEvent): boolean {
+	return event.type !== "message_update" && event.type !== "message_start" && event.type !== "tool_execution_update";
 }
 
 function createStoppedState(reason: StopReason, requestedReason: StopReason = reason): TaskStopped {

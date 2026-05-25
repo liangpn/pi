@@ -1,5 +1,5 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { isAbsolute, join } from "node:path";
+import { dirname, isAbsolute, join } from "node:path";
 import { prepareChildSettingsSync } from "./child-settings.js";
 import { loadRuntimeConfig, type RuntimeConfig } from "./runtime-config.js";
 
@@ -33,7 +33,10 @@ export function loadDemoEnv(exampleDir: string, baseEnv: NodeJS.ProcessEnv): Rpc
 	const envFile = join(exampleDir, ".env");
 	const localEnv = existsSync(envFile) ? parseEnvFile(readFileSync(envFile, "utf8")) : {};
 	const childEnv: NodeJS.ProcessEnv = { ...baseEnv, ...localEnv };
-	const outputDir = resolvePath(exampleDir, readEnv(childEnv, "PI_DEMO_OUTPUT_DIR") ?? ".rpc-task-console");
+	const outputDir = resolvePath(
+		exampleDir,
+		readEnv(childEnv, "PI_DEMO_OUTPUT_DIR") ?? join(findProjectRoot(exampleDir), "logs"),
+	);
 	const snapshotDir = resolveOutputDir(exampleDir, childEnv, "PI_DEMO_SNAPSHOT_DIR", outputDir, "snapshots");
 	const logDir = resolveOutputDir(exampleDir, childEnv, "PI_DEMO_LOG_DIR", outputDir, "logs");
 	const rpcEventDir = resolveOutputDir(exampleDir, childEnv, "PI_DEMO_RPC_EVENT_DIR", outputDir, "rpc-events");
@@ -336,6 +339,26 @@ function resolveOutputDir(
 
 function resolvePath(exampleDir: string, configuredPath: string): string {
 	return isAbsolute(configuredPath) ? configuredPath : join(exampleDir, configuredPath);
+}
+
+function findProjectRoot(exampleDir: string): string {
+	return (
+		findPackageWorkspaceRoot(exampleDir) ?? findPackageWorkspaceRoot(process.cwd()) ?? join(exampleDir, "../../../..")
+	);
+}
+
+function findPackageWorkspaceRoot(startDir: string): string | undefined {
+	let currentDir = startDir;
+	for (;;) {
+		if (existsSync(join(currentDir, "package.json")) && existsSync(join(currentDir, "packages"))) {
+			return currentDir;
+		}
+		const parentDir = dirname(currentDir);
+		if (parentDir === currentDir) {
+			return undefined;
+		}
+		currentDir = parentDir;
+	}
 }
 
 function applyMcpExtensionArgs(

@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { createRuntimeSteps } from "./tasks.js";
 import type {
 	JsonCardData,
@@ -96,7 +97,7 @@ export class TaskStore {
 			logs: [],
 			receipts: [
 				{
-					id: `receipt-${runId}-${time}-created`,
+					id: randomUUID(),
 					runId,
 					message: `已创建 ${this.planSteps.length} 个步骤，${this.planSteps.flatMap((step) => step.tasks).length} 个任务`,
 					time,
@@ -149,6 +150,9 @@ export class TaskStore {
 
 	apply(event: TaskStoreEvent): void {
 		if (event.runId !== this.snapshot.run.id) {
+			if (this.snapshot.run.status === "idle") {
+				return;
+			}
 			this.snapshot = {
 				...this.snapshot,
 				logs: [...this.snapshot.logs, this.createIgnoredRunLog(event)],
@@ -276,7 +280,7 @@ export class TaskStore {
 				},
 				extraLogs,
 				conversationMessage: {
-					id: `message-${event.runId}-${event.stepId}-${event.taskId}-${event.time}`,
+					id: randomUUID(),
 					runId: event.runId,
 					stepId: event.stepId,
 					taskId: event.taskId,
@@ -329,7 +333,7 @@ export class TaskStore {
 
 		const existingAttempt = attemptIndex >= 0 ? attempts[attemptIndex] : undefined;
 		const resolvedAttemptNumber = event.attempt ?? existingAttempt?.attempt ?? attempts.length + 1;
-		const resolvedAttemptId = event.attemptId ?? existingAttempt?.id ?? `${task.id}-attempt-${resolvedAttemptNumber}`;
+		const resolvedAttemptId = event.attemptId ?? existingAttempt?.id ?? randomUUID();
 		const resolvedAgentRunId = event.agentRunId ?? existingAttempt?.agentRunId ?? resolvedAttemptId;
 		const updatedAttempt: TaskAttempt = {
 			id: resolvedAttemptId,
@@ -362,10 +366,7 @@ export class TaskStore {
 
 	private findAttemptIndex(attempts: readonly TaskAttempt[], event: TaskStoreEvent): number {
 		if (event.attemptId) {
-			const byId = attempts.findIndex((attempt) => attempt.id === event.attemptId);
-			if (byId >= 0) {
-				return byId;
-			}
+			return attempts.findIndex((attempt) => attempt.id === event.attemptId);
 		}
 		if (event.agentRunId) {
 			const byAgentRunId = attempts.findIndex((attempt) => attempt.agentRunId === event.agentRunId);
@@ -391,7 +392,7 @@ export class TaskStore {
 
 	private createLog(event: TaskStoreEvent): TaskLogEntry {
 		return {
-			id: `log-${event.runId}-${event.stepId}-${event.taskId}-${event.time}-${event.type}`,
+			id: randomUUID(),
 			runId: event.runId,
 			stepId: event.stepId,
 			taskId: event.taskId,
@@ -404,7 +405,7 @@ export class TaskStore {
 
 	private createDataIgnoredLog(event: Extract<TaskStoreEvent, { type: "task_completed" }>): TaskLogEntry {
 		return {
-			id: `log-${event.runId}-${event.stepId}-${event.taskId}-${event.time}-data-ignored`,
+			id: randomUUID(),
 			runId: event.runId,
 			stepId: event.stepId,
 			taskId: event.taskId,
@@ -422,7 +423,7 @@ export class TaskStore {
 				? `step 已处于 ${step.status}`
 				: `task 已处于 ${task.status}`;
 		return {
-			id: `log-${event.runId}-${event.stepId}-${event.taskId}-${event.time}-ignored-state`,
+			id: randomUUID(),
 			runId: event.runId,
 			stepId: event.stepId,
 			taskId: event.taskId,
@@ -435,7 +436,7 @@ export class TaskStore {
 
 	private createIgnoredRunLog(event: TaskStoreEvent): TaskLogEntry {
 		return {
-			id: `log-${this.snapshot.run.id}-${event.stepId}-${event.taskId}-${event.time}-ignored-run`,
+			id: randomUUID(),
 			runId: this.snapshot.run.id,
 			stepId: event.stepId,
 			taskId: event.taskId,
@@ -469,7 +470,7 @@ export class TaskStore {
 		return [
 			...receipts,
 			{
-				id: `receipt-${event.runId}-${event.stepId}-${event.taskId}-${event.time}`,
+				id: randomUUID(),
 				runId: event.runId,
 				message: `【${step?.title ?? event.stepId}】【${task.title}】${resultText}`,
 				time: event.time,
@@ -507,7 +508,7 @@ interface TaskMutation {
 function createCard(stepId: string, task: RuntimeTask, data: unknown): UICard {
 	if (task.card_type === "text") {
 		return {
-			id: `card-${task.id}`,
+			id: randomUUID(),
 			stepId,
 			taskId: task.id,
 			type: "text",
@@ -518,7 +519,7 @@ function createCard(stepId: string, task: RuntimeTask, data: unknown): UICard {
 	}
 	if (task.card_type === "table") {
 		return {
-			id: `card-${task.id}`,
+			id: randomUUID(),
 			stepId,
 			taskId: task.id,
 			type: "table",
@@ -529,7 +530,7 @@ function createCard(stepId: string, task: RuntimeTask, data: unknown): UICard {
 	}
 	if (task.card_type === "map") {
 		return {
-			id: `card-${task.id}`,
+			id: randomUUID(),
 			stepId,
 			taskId: task.id,
 			type: "map",
@@ -540,7 +541,7 @@ function createCard(stepId: string, task: RuntimeTask, data: unknown): UICard {
 	}
 	if (task.card_type === "media") {
 		return {
-			id: `card-${task.id}`,
+			id: randomUUID(),
 			stepId,
 			taskId: task.id,
 			type: "media",
@@ -550,7 +551,7 @@ function createCard(stepId: string, task: RuntimeTask, data: unknown): UICard {
 		};
 	}
 	return {
-		id: `card-${task.id}`,
+		id: randomUUID(),
 		stepId,
 		taskId: task.id,
 		type: "json",

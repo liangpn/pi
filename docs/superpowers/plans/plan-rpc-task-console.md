@@ -58,6 +58,7 @@
 
 新增：
 
+- `docs/superpowers/plans/run-police-workflow.mjs`
 - `packages/coding-agent/examples/rpc-task-console/runtime-config.ts`
 - `packages/coding-agent/examples/rpc-task-console/plan-validation.ts`
 - `packages/coding-agent/examples/rpc-task-console/child-settings.ts`
@@ -406,8 +407,8 @@ npx tsx ../../node_modules/vitest/dist/cli.js --run test/rpc-task-console.test.t
 
 规则：
 
-- 所有相对路径都相对 example 目录解析。
-- `PI_DEMO_OUTPUT_DIR` 是默认输出根目录。
+- Task 11 前的既有实现按 example 目录解析相对路径；Task 11 要把默认输出根迁移到项目根目录 `logs/`。
+- `PI_DEMO_OUTPUT_DIR` 是默认输出根目录；Task 11 后默认值为项目根目录 `logs/`。
 - 未单独配置的输出目录从 `PI_DEMO_OUTPUT_DIR` 派生。
 - snapshot、logs、RPC events、stderr、conversation messages 可分别配置到不同目录。
 - 路径解析测试必须覆盖相对路径、绝对路径和未单独配置时的派生目录。
@@ -570,7 +571,7 @@ export function validateTaskResult(task: RuntimeTask, result: AgentTaskResult): 
 - `child_spawned` 将 attempt task 置为 `running` 并写入 task log。
 - `prompt_response_failure` 将当前 attempt 置为 `fail`。
 - dispatcher 使用 `buildTaskPrompt()` 创建 child prompt。
-- `message_update` 只进日志。
+- `message_update` 不驱动状态；默认人工验收日志是否保留该类流式事件由 Task 11 调整。
 - `unknown_json_event` 写入 task logs 和 RPC event persistence，不驱动 task 状态。
 - assistant `message_end` 解析并暂存 valid result。
 - `auto_retry_start` 和 `auto_retry_end` 写入 task logs，不结算 attempt。
@@ -858,7 +859,7 @@ npx tsx ../../node_modules/vitest/dist/cli.js --run test/rpc-task-console.test.t
 - 修改：`packages/coding-agent/examples/rpc-task-console/server.ts`
 - 修改：`packages/coding-agent/test/rpc-task-console.test.ts`
 
-- [ ] **Step 1: 拆分静态资源**
+- [x] **Step 1: 拆分静态资源**
 
 `index.html` 只保留结构和引用：
 
@@ -872,11 +873,11 @@ npx tsx ../../node_modules/vitest/dist/cli.js --run test/rpc-task-console.test.t
 `server.ts` 必须改为服务真实 `index.html`、`styles.css` 和 `app.js` 文件，不再从 `index.html` 正则拆分内联资源。
 `/runs/reset` 空 body 时必须保持当前 workflow steps，不得回退到别的默认 workflow。
 
-- [ ] **Step 2: 移除硬编码业务卡片**
+- [x] **Step 2: 移除硬编码业务卡片**
 
 初始 DOM 不得出现业务 card。`cards.length === 0` 时可以显示非 card 的空态，不能创建等待态业务卡片。
 
-- [ ] **Step 3: 渲染 conversation messages**
+- [x] **Step 3: 渲染 conversation messages**
 
 智能协同消息区渲染：
 
@@ -885,7 +886,7 @@ npx tsx ../../node_modules/vitest/dist/cli.js --run test/rpc-task-console.test.t
 
 第一版不渲染主 agent 自由对话。
 
-- [ ] **Step 4: 渲染流程指引**
+- [x] **Step 4: 渲染流程指引**
 
 流程指引必须渲染：
 
@@ -897,7 +898,7 @@ npx tsx ../../node_modules/vitest/dist/cli.js --run test/rpc-task-console.test.t
 
 状态变化必须局部更新，不得重排整个列表。
 
-- [ ] **Step 5: card renderer**
+- [x] **Step 5: card renderer**
 
 按 `card.type` 渲染：
 
@@ -909,7 +910,7 @@ npx tsx ../../node_modules/vitest/dist/cli.js --run test/rpc-task-console.test.t
 
 Media card 使用 `gbids` 等引用数据，不请求后端视频 bytes。
 
-- [ ] **Step 6: 可访问性、stopping 和局部更新**
+- [x] **Step 6: 可访问性、stopping 和局部更新**
 
 要求：
 
@@ -925,7 +926,7 @@ Media card 使用 `gbids` 等引用数据，不请求后端视频 bytes。
 - 支持 `prefers-reduced-motion`。
 - 状态变化不重排整个列表。
 
-- [ ] **Step 7: 实现智能协同侧栏左右吸附**
+- [x] **Step 7: 实现智能协同侧栏左右吸附**
 
 要求：
 
@@ -935,7 +936,7 @@ Media card 使用 `gbids` 等引用数据，不请求后端视频 bytes。
 - 侧栏吸附左侧时从左侧展开，吸附右侧时从右侧展开。
 - 吸附方向只保存在前端 UI 状态，不写入 runtime snapshot。
 
-- [ ] **Step 8: 实现卡片工作区自适应 3 列优先布局**
+- [x] **Step 8: 实现卡片工作区自适应 3 列优先布局**
 
 要求：
 
@@ -945,7 +946,7 @@ Media card 使用 `gbids` 等引用数据，不请求后端视频 bytes。
 - 卡片不得横向溢出，不得与智能协同侧栏重叠。
 - 375px 左右移动端宽度不得横向滚动。
 
-- [ ] **Step 9: 实现固定视口、独立滚动、卡片收起和最大化**
+- [x] **Step 9: 实现固定视口、独立滚动、卡片收起和最大化**
 
 要求：
 
@@ -967,8 +968,9 @@ Media card 使用 `gbids` 等引用数据，不请求后端视频 bytes。
 **文件：**
 
 - 修改：`packages/coding-agent/test/rpc-task-console.test.ts`
+- 范围修正：`packages/coding-agent/examples/rpc-task-console/task-store.ts`（Task 10 reset 并发回归测试暴露旧 run 迟到事件会污染 reset 后 idle snapshot，需要源码修复）
 
-- [ ] **Step 1: 后端测试覆盖**
+- [x] **Step 1: 后端测试覆盖**
 
 测试至少覆盖：
 
@@ -1023,7 +1025,7 @@ Media card 使用 `gbids` 等引用数据，不请求后端视频 bytes。
 - static file allowlist。
 - fake MCP Streamable HTTP server 覆盖 adapter 正常响应、HTTP 错误、JSON-RPC 错误和协议错误。
 
-- [ ] **Step 2: UI/静态测试覆盖**
+- [x] **Step 2: UI/静态测试覆盖**
 
 测试至少覆盖：
 
@@ -1046,7 +1048,7 @@ Media card 使用 `gbids` 等引用数据，不请求后端视频 bytes。
 - focus ring 可见。
 - aria-label、aria-live、alert、reduced-motion。
 
-- [ ] **Step 3: 运行单文件测试**
+- [x] **Step 3: 运行单文件测试**
 
 ```bash
 cd packages/coding-agent
@@ -1055,7 +1057,7 @@ npx tsx ../../node_modules/vitest/dist/cli.js --run test/rpc-task-console.test.t
 
 预期：通过。
 
-- [ ] **Step 4: 运行 repo check**
+- [x] **Step 4: 运行 repo check**
 
 ```bash
 npm run check
@@ -1065,25 +1067,330 @@ npm run check
 
 - [ ] **Step 5: 手动 demo 验收**
 
+当前进入人工验收阶段。自动化测试和 repo check 已通过；真实 demo 已能启动，并已验证 child Pi process、LLM、MCP 链路进入真实执行。完整手动验收尚未勾选，原因是当前 MCP 接入架构需要先调研确认，真实 MCP 工具返回 `terminated`，且真实模型输出仍会出现不满足 `data_structure` 的情况。
+
+历史运行产物 `packages/coding-agent/examples/rpc-task-console/.rpc-task-console/` 可以清理；Task 11 后默认运行输出改为项目根目录 `logs/`。
+
+### 已由主会话部分验收
+
+- [x] demo server 可启动。
+- [x] 初始 HTTP shell 可返回真实 `index.html` / `styles.css` / `app.js`。
+- [x] 初始 snapshot 为 idle，包含当前 workflow 的 steps/tasks，cards/logs/receipts/conversationMessages 为空。
+- [x] LLM `/v1/models` endpoint 可达。
+- [x] MCP endpoint 可建立 Streamable HTTP SSE 连接。
+- [x] 公安 workflow 可触发真实 child Pi process。
+- [x] 公安 workflow 可触发 MCP adapter tool call。
+- [x] RPC event、snapshot、task log、conversation message 可写入本地输出目录；Task 11 后默认输出迁移到项目根 `logs/`。
+
+### 待人工确认
+
+- [ ] MCP 接入方案已根据 Pi 文档和仓库调研重新确认；不得先基于当前手写 schema / hand-rolled Streamable HTTP client 扩大实现。
+- [ ] `jcj-get-case-detail` 等真实 MCP tool 能成功返回业务数据，而不是 `terminated`。
+- [ ] 模型最终输出稳定满足 `{ content, data? }` 和 task `data_structure`。
+- [ ] 配置 `card_type` 的 task 成功创建 card。
+- [ ] 未配置 `card_type` 的 task 不创建 card。
+- [ ] task retry、tool call 上限、stop、replace 行为符合 spec。
+- [ ] 浏览器重连后拿到最新 snapshot。
+- [ ] 卡片收起、最大化、侧栏左右吸附和 3 列优先布局符合 spec。
+- [ ] 375px 左右移动端宽度无横向滚动。
+- [ ] 输出目录包含 snapshot、logs、RPC events、stderr、conversation messages。
+
+### 人工调试命令
+
+启动 demo server：
+
 ```bash
 cd packages/coding-agent
 npm run example:rpc-task-console
 ```
 
-打开 `http://localhost:4175`。
+打开 UI：
 
-验收：
+```text
+http://localhost:4175
+```
 
-- 初始 UI 展示当前 workflow 的全部 steps/tasks。
-- 顶部标题栏展示产品名称“公安指挥任务控制台”。
-- step 严格串行。
-- 当前 step 内 task 并行且受并发上限控制。
-- task 成功后对话区域出现 task message。
-- 配置 `card_type` 的 task 创建 card。
-- 未配置 `card_type` 的 task 不创建 card。
-- task retry、tool call 上限、stop、replace 行为符合 spec。
-- 浏览器重连后拿到最新 snapshot。
-- 使用真实 child Pi process、实际 MCP extension 装载和真实 MCP server 做一轮端到端验证；如本地环境不可用，记录未验证原因和替代验证证据。
-- 卡片收起、最大化、侧栏左右吸附和 3 列优先布局符合 spec。
-- 375px 左右移动端宽度无横向滚动。
-- 输出目录写入 snapshot、logs、RPC events、stderr、conversation messages。
+检查初始 snapshot：
+
+```bash
+curl -sS http://localhost:4175/api/snapshot | jq
+```
+
+检查 LLM endpoint：
+
+```bash
+curl -sS -D /tmp/rpc-task-console-llm.headers \
+  -o /tmp/rpc-task-console-llm.body \
+  "http://192.168.20.20:9111/v1/models"
+```
+
+检查 MCP Streamable HTTP endpoint（SSE 长连接可能不会主动结束，`--max-time` 超时但返回 `text/event-stream` 即表示连通）：
+
+```bash
+curl -sS --max-time 5 -D /tmp/rpc-task-console-mcp.headers \
+  -o /tmp/rpc-task-console-mcp.body \
+  "http://192.168.20.21:30080/pacc-mcp-server/mcp?toolset=shijiazhuang&clientid=zyhxx" || true
+```
+
+触发公安 workflow：
+
+```bash
+node docs/superpowers/plans/run-police-workflow.mjs
+```
+
+检查输出目录：
+
+```bash
+find logs -maxdepth 3 -type f | sort
+```
+
+关键日志路径：
+
+```text
+logs/snapshots/<run-uuid>.json
+logs/logs/<run-uuid>.jsonl
+logs/rpc-events/<run-uuid>/<agent-uuid>.jsonl
+logs/conversation/<run-uuid>.jsonl
+logs/stderr/<run-uuid>/<agent-uuid>.log
+logs/pi-agent/settings.json
+```
+
+快速定位 MCP tool 结果：
+
+```bash
+rg -n "tool_execution_start|tool_execution_end|failed: terminated|jcj-get-case-detail" \
+  logs/rpc-events
+```
+
+快速查看 runtime 日志中的失败原因：
+
+```bash
+tail -n 80 logs/logs/<run-uuid>.jsonl
+```
+
+清理本地 demo 运行产物：
+
+```bash
+node -e 'import("node:fs").then(fs => fs.rmSync("packages/coding-agent/examples/rpc-task-console/.rpc-task-console", { recursive: true, force: true }))'
+```
+
+---
+
+## Task 11: 人工验收反馈补充修正
+
+**目标：** 根据人工验收反馈，补齐可读日志、UUID 命名、公安 workflow 测试入口，并完成 Pi MCP 接入方向调研。
+
+**文件：**
+
+- 新增：`docs/superpowers/plans/run-police-workflow.mjs`
+- 修改：`packages/coding-agent/examples/rpc-task-console/task-store.ts`
+- 修改：`packages/coding-agent/examples/rpc-task-console/task-dispatcher.ts`
+- 修改：`packages/coding-agent/examples/rpc-task-console/child-agent-process.ts`
+- 修改：`packages/coding-agent/examples/rpc-task-console/persistence.ts`
+- 修改：`packages/coding-agent/examples/rpc-task-console/types.ts`
+- 修改：`packages/coding-agent/examples/rpc-task-console/index.html`
+- 修改：`packages/coding-agent/examples/rpc-task-console/app.js`
+- 修改：`packages/coding-agent/examples/rpc-task-console/styles.css`
+- 修改：`packages/coding-agent/examples/rpc-task-console/server.ts`
+- 修改：`packages/coding-agent/test/rpc-task-console.test.ts`
+
+- [x] **Step 1: 统一 runtime ID 为 UUID**
+
+规则：
+
+- runtime 自生成 ID 统一使用标准 UUID 文本格式 `8-4-4-4-12`。
+- `run.id`、log id、message id、receipt id、card id、attempt id、agent 关联 id 都使用 UUID。
+- ID 不拼接 `stepId`、`taskId`、timestamp、event type 或长 agent run id。
+- `stepId`、`taskId`、原始 Pi agent run id 作为 JSON 字段保留，不进入主 ID。
+
+- [x] **Step 2: 调整输出文件名**
+
+默认输出路径位于项目根目录 `logs/`：
+
+```text
+logs/snapshots/<run-uuid>.json
+logs/logs/<run-uuid>.jsonl
+logs/conversation/<run-uuid>.jsonl
+logs/rpc-events/<run-uuid>/<agent-uuid>.jsonl
+logs/stderr/<run-uuid>/<agent-uuid>.log
+```
+
+文件名不得拼接 task id、step id 或长 agent run id。JSON record 内保留 `runId`、`agentId`、`stepId`、`taskId`、`attemptId`。历史 `.rpc-task-console/` 目录是可删除的旧运行产物，不再作为默认输出。
+
+- [x] **Step 3: 过滤默认日志中的流式事件**
+
+默认 task logs 和默认 RPC event 持久化不写入：
+
+- `message_update`
+- `message_start`
+- `tool_execution_update`
+- raw `assistantMessageEvent` streaming 结构
+- partial result 流式更新
+
+默认保留：
+
+- task/run 状态变化。
+- `message_end` 的最终内容或解析摘要。
+- `tool_execution_start` / `tool_execution_end`。
+- validation、process、retry、stop/replace、stale event 诊断。
+
+如后续需要完整 raw trace，必须单独加 debug 配置，不作为默认人工验收输出。
+
+- [x] **Step 4: 落地公安 workflow 命令行脚本**
+
+新增 `docs/superpowers/plans/run-police-workflow.mjs`。
+
+要求：
+
+- 读取 `docs/superpowers/specs/references/police-command-workflow.json`。
+- 默认 `userInstruction` 与前端输入框默认文本一致。
+- 默认指令包含接警单编号 `44010620260525085000433002`。
+- 将 `steps + userInstruction` 写入 `/runs/start` 请求 JSON。
+- 支持可选 `--base` 和 `--userInstruction`。
+- 不包含 snapshot 轮询逻辑。
+
+- [x] **Step 5: 增加前端“测试”按钮**
+
+要求：
+
+- 顶部右上角增加按钮，按钮文本为“测试”。
+- 按钮读取当前指令输入框内容。
+- 如果输入框为空，前端弹框提示，不启动 run。
+- 按钮使用公安 workflow JSON 作为预置 `steps` 调用 `/runs/start`。
+- 指令输入框默认文本与 `run-police-workflow.mjs` 默认 `userInstruction` 一致。
+- 对话框里的正常 start、stop、replace 交互保持原有语义。
+
+- [x] **Step 6: MCP 接入调研，不先修 schema**
+
+调研范围：
+
+- `packages/coding-agent/docs/`
+- `packages/coding-agent/src/`
+- `packages/agent/src/`
+- `packages/coding-agent/examples/`
+- 现有 extension/tool 注册机制。
+- Pi CLI `--tools`、settings、RPC mode、MCP 相关配置或文档。
+
+必须回答：
+
+- Pi 是否已有原生 MCP 配置入口。
+- 是否应通过 MCP `tools/list` 自动发现 tool schema。
+- 当前 `mcp.config.json` 手写 `tools[].parameters` 是否应删除。
+- `mcp-streamable-http-client.ts` 是否应替换为项目已有实现或官方/标准 SDK。
+- task `tools` allowlist 应该在哪一层强制。
+
+调研结论：
+
+- Pi 当前没有原生 MCP 配置入口，extension 路线正确。
+- 当前手写 `tools[].parameters` 只能作为临时 schema/override，不应作为长期必需配置。
+- 当前自实现 Streamable HTTP client 只适合临时 demo；后续 MCP 调用链应使用官方 MCP TypeScript SDK，并通过 `tools/list` 自动发现 `inputSchema`。
+- task tools allowlist 继续多层强制：Pi CLI/AgentSession 是主防线，adapter/MCP wrapper 也要拒绝未允许工具。
+
+- [x] **Step 7: 更新测试并验证**
+
+测试至少覆盖：
+
+- runtime ID 和文件名为 UUID，不包含 task id 或长 agent run id。
+- 默认日志过滤 streaming event 结构。
+- `message_end`、tool start/end、validation/process/stale 诊断仍保留。
+- “测试”按钮空输入会提示且不启动 run。
+- “测试”按钮用当前输入框内容启动公安 workflow。
+- `run-police-workflow.mjs` 读取公安 workflow JSON 并发送 `/runs/start`。
+
+运行：
+
+```bash
+cd packages/coding-agent
+npx tsx ../../node_modules/vitest/dist/cli.js --run test/rpc-task-console.test.ts
+```
+
+代码修改完成后：
+
+```bash
+npm run check
+```
+
+---
+
+## Task 12: MCP adapter 使用 tools/list 自动发现 schema
+
+**目标：** 保留 Pi extension 接入方向，但把 demo MCP adapter 从手写 tool schema / hand-rolled Streamable HTTP client 改为 MCP `tools/list` 自动发现 schema，并用标准 MCP SDK 执行 `callTool()`。
+
+**文件：**
+
+- 修改：`packages/coding-agent/examples/rpc-task-console/mcp-config.ts`
+- 修改：`packages/coding-agent/examples/rpc-task-console/mcp-streamable-http-client.ts`
+- 修改：`packages/coding-agent/examples/rpc-task-console/extensions/mcp-tools.ts`
+- 修改：`packages/coding-agent/examples/rpc-task-console/mcp.config.example.json`
+- 修改：`packages/coding-agent/examples/rpc-task-console/mcp.config.json`（如必须）
+- 修改：`packages/coding-agent/package.json`（如引入 MCP SDK 依赖）
+- 修改：`package-lock.json`（如引入 MCP SDK 依赖）
+- 修改：`packages/coding-agent/test/rpc-task-console.test.ts`
+
+- [x] **Step 1: 采用官方 MCP TypeScript SDK**
+
+要求：
+
+- 优先使用 `@modelcontextprotocol/sdk` 提供的 Streamable HTTP client 能力。
+- 不再在 demo 中手写 Streamable HTTP JSON-RPC session/client 细节。
+- 若 SDK 版本/API 存在不确定，先查看已安装类型或官方包类型，不猜 API。
+
+- [x] **Step 2: 调整 MCP config 语义**
+
+`mcp.config.json` 长期语义：
+
+- 配置 server transport、url、headers/auth。
+- 配置允许暴露的 remote tool 名称。
+- 可选配置本地 rename、description override、schema override。
+- `parameters` 不再是必填 schema 来源；默认 schema 来自 remote MCP `tools/list` 的 `inputSchema`。
+
+- [x] **Step 3: 启动时 tools/list 自动发现**
+
+要求：
+
+- MCP adapter 初始化时调用 remote `tools/list`。
+- 按 config allowlist 过滤 remote tools。
+- 用 remote `inputSchema` 注册 Pi tool schema。
+- 如果 remote tool 缺少 schema，可使用 `{ type: "object", additionalProperties: true }` 并记录诊断。
+- 如果 config 声明的 allowlist tool 在 remote `tools/list` 不存在，启动或注册阶段给出明确错误/诊断。
+
+- [x] **Step 4: callTool 执行真实 MCP 调用**
+
+要求：
+
+- Pi tool execute 使用 SDK `callTool()`。
+- MCP HTTP、协议、JSON-RPC 错误转成 tool error，不让 child Pi process 崩溃。
+- 保持 `jcj-get-case-detail` 可通过 remote schema 接收 `jjdbh` 等真实参数。
+
+- [x] **Step 5: 保留多层 allowlist**
+
+要求：
+
+- dispatcher 继续通过 `--tools` / `--no-tools` 限制 child agent 工具集合。
+- adapter 继续只注册当前 task allowlist 允许的 MCP tools。
+- MCP wrapper 层也拒绝未发现或未允许的 remote tool call。
+
+- [x] **Step 6: 更新测试并验证**
+
+测试至少覆盖：
+
+- fake MCP server `tools/list` 返回 schema 后，adapter 使用 remote `inputSchema` 注册 Pi tool。
+- `mcp.config.json` 不需要手写 `parameters` 也可注册 tool。
+- config schema override 可以覆盖 remote schema。
+- allowlist 过滤未允许工具。
+- `tools/call` 正常返回 text content / structured content。
+- HTTP、JSON-RPC、协议错误转 tool error。
+- `jcj-get-case-detail` 测试覆盖 `jjdbh` 入参，而不是 `caseId`。
+
+运行：
+
+```bash
+cd packages/coding-agent
+npx tsx ../../node_modules/vitest/dist/cli.js --run test/rpc-task-console.test.ts
+```
+
+代码修改完成后：
+
+```bash
+npm run check
+```

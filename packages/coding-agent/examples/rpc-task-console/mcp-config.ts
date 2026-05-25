@@ -10,14 +10,20 @@ export interface McpStreamableHttpServerConfig {
 	readonly transport: "streamable-http";
 	readonly url: string;
 	readonly headers: Record<string, string>;
+	readonly auth?: McpServerAuthConfig;
 	readonly timeoutMs?: number;
+}
+
+export interface McpServerAuthConfig {
+	readonly type: "bearer";
+	readonly tokenEnv: string;
 }
 
 export interface McpToolMapping {
 	readonly name: string;
 	readonly server: string;
 	readonly mcpTool: string;
-	readonly description: string;
+	readonly description?: string;
 	readonly parameters?: JsonObject;
 }
 
@@ -49,10 +55,14 @@ function parseServers(value: unknown, env: NodeJS.ProcessEnv): Record<string, Mc
 			throw new Error(`MCP server "${name}" requires a url`);
 		}
 		const timeoutMs = parseOptionalPositiveInteger(rawServer.timeoutMs, `MCP server "${name}" timeoutMs`);
+		const auth = parseAuth(rawServer.auth, name);
+		const headers = parseHeaders(rawServer.headers, env, name);
+		applyAuthHeaders(headers, auth, env, name);
 		servers[name] = {
 			transport: "streamable-http",
 			url: rawServer.url,
-			headers: parseHeaders(rawServer.headers, env, name),
+			headers,
+			...(auth === undefined ? {} : { auth }),
 			...(timeoutMs === undefined ? {} : { timeoutMs }),
 		};
 	}
@@ -67,22 +77,57 @@ function parseTools(value: unknown, servers: Record<string, McpStreamableHttpSer
 		if (!isJsonObject(rawTool)) {
 			throw new Error(`MCP tool mapping at index ${index} must be an object`);
 		}
-		const name = readRequiredString(rawTool, "name", `MCP tool mapping at index ${index}`);
+		const mcpTool = readRequiredString(rawTool, "mcpTool", `MCP tool mapping at index ${index}`);
+		const name = readOptionalString(rawTool, "name", `MCP tool mapping "${mcpTool}"`) ?? mcpTool;
 		const server = readRequiredString(rawTool, "server", `MCP tool mapping "${name}"`);
 		if (!servers[server]) {
 			throw new Error(`MCP tool mapping "${name}" references unknown server "${server}"`);
 		}
-		const mcpTool = readRequiredString(rawTool, "mcpTool", `MCP tool mapping "${name}"`);
-		const description = readRequiredString(rawTool, "description", `MCP tool mapping "${name}"`);
-		const parameters = rawTool.parameters === undefined ? undefined : parseParameters(rawTool.parameters, name);
+		const description = readOptionalString(rawTool, "description", `MCP tool mapping "${name}"`);
+		if (rawTool.parameters !== undefined && rawTool.schema !== undefined) {
+			throw new Error(`MCP tool mapping "${name}" must not define both parameters and schema`);
+		}
+		const rawParameters = rawTool.parameters ?? rawTool.schema;
+		const parameters = rawParameters === undefined ? undefined : parseParameters(rawParameters, name);
 		return {
 			name,
 			server,
 			mcpTool,
-			description,
+			...(description === undefined ? {} : { description }),
 			...(parameters === undefined ? {} : { parameters }),
 		};
 	});
+}
+
+function parseAuth(value: unknown, serverName: string): McpServerAuthConfig | undefined {
+	if (value === undefined) {
+		return undefined;
+	}
+	if (!isJsonObject(value)) {
+		throw new Error(`MCP server "${serverName}" auth must be an object`);
+	}
+	if (value.type !== "bearer") {
+		throw new Error(`MCP server "${serverName}" auth.type must be bearer`);
+	}
+	return {
+		type: "bearer",
+		tokenEnv: readRequiredString(value, "tokenEnv", `MCP server "${serverName}" auth`),
+	};
+}
+
+function applyAuthHeaders(
+	headers: Record<string, string>,
+	auth: McpServerAuthConfig | undefined,
+	env: NodeJS.ProcessEnv,
+	serverName: string,
+): void {
+	if (!auth) {
+		return;
+	}
+	if (headers.Authorization !== undefined || headers.authorization !== undefined) {
+		throw new Error(`MCP server "${serverName}" must not define Authorization header together with auth`);
+	}
+	headers.Authorization = `Bearer ${env[auth.tokenEnv] ?? ""}`;
 }
 
 function parseHeaders(value: unknown, env: NodeJS.ProcessEnv, serverName: string): Record<string, string> {
@@ -113,6 +158,17 @@ function readRequiredString(value: JsonObject, key: string, label: string): stri
 	const fieldValue = value[key];
 	if (typeof fieldValue !== "string" || fieldValue.trim().length === 0) {
 		throw new Error(`${label} requires ${key}`);
+	}
+	return fieldValue;
+}
+
+function readOptionalString(value: JsonObject, key: string, label: string): string | undefined {
+	const fieldValue = value[key];
+	if (fieldValue === undefined) {
+		return undefined;
+	}
+	if (typeof fieldValue !== "string" || fieldValue.trim().length === 0) {
+		throw new Error(`${label} ${key} must be a non-empty string`);
 	}
 	return fieldValue;
 }

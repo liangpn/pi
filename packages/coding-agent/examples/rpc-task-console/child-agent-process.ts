@@ -1,4 +1,5 @@
 import type { ChildProcess } from "node:child_process";
+import { randomUUID } from "node:crypto";
 import { attachJsonlLineReader, serializeJsonLine } from "../../src/modes/rpc/jsonl.js";
 import { spawnProcess } from "../../src/utils/child-process.js";
 import { createPersistenceWriter } from "./persistence.js";
@@ -11,13 +12,12 @@ export class ChildAgentProcess implements ChildAgentProcessLike {
 	private readonly options: ChildAgentProcessFactoryOptions;
 	private readonly persistence: ReturnType<typeof createPersistenceWriter>;
 	private child: ChildProcess | undefined;
-	private requestSequence = 0;
 	private stderrTail = "";
 	private detachStdout: (() => void) | undefined;
 
 	constructor(options: ChildAgentProcessFactoryOptions) {
 		this.options = options;
-		this.agentRunId = `agent-${options.runId}-${options.stepId}-${options.taskId}`;
+		this.agentRunId = randomUUID();
 		this.persistence = createPersistenceWriter({
 			rpcEventDir: readEnvPath(options.env, "PI_DEMO_RPC_EVENT_DIR"),
 			childStderrDir: readEnvPath(options.env, "PI_DEMO_CHILD_STDERR_DIR"),
@@ -82,15 +82,19 @@ export class ChildAgentProcess implements ChildAgentProcessLike {
 	private send(
 		command: { readonly type: "prompt" | "steer"; readonly message: string } | { readonly type: "abort" },
 	): string {
-		const id = `${this.agentRunId}-${command.type}-${++this.requestSequence}`;
+		const id = randomUUID();
 		this.child?.stdin?.write(serializeJsonLine({ ...command, id }));
 		return id;
 	}
 
 	private emitEvent(event: NormalizedChildEvent): void {
 		this.options.onEvent(event);
+		if (event.type === "message_update" || event.type === "message_start" || event.type === "tool_execution_update") {
+			return;
+		}
 		void this.persistence.appendRpcEvent({
 			runId: this.options.runId,
+			agentId: this.agentRunId,
 			stepId: this.options.stepId,
 			taskId: this.options.taskId,
 			agentRunId: this.agentRunId,
@@ -105,6 +109,7 @@ export class ChildAgentProcess implements ChildAgentProcessLike {
 		}
 		void this.persistence.writeChildStderr({
 			runId: this.options.runId,
+			agentId: this.agentRunId,
 			stepId: this.options.stepId,
 			taskId: this.options.taskId,
 			agentRunId: this.agentRunId,

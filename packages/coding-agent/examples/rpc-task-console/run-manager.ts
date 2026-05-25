@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { createChildAgentProcess } from "./child-agent-process.js";
 import type { DemoEnv } from "./env.js";
 import { createPersistenceWriter } from "./persistence.js";
@@ -29,7 +30,6 @@ export class RunManager {
 	private persistedLogCount = 0;
 	private persistedConversationCount = 0;
 	private pendingPersistence: Promise<void> = Promise.resolve();
-	private runSequence = 0;
 	private pendingReplacement: PendingRun | undefined;
 	private pendingStartPromise: Promise<void> | undefined;
 
@@ -163,7 +163,7 @@ export class RunManager {
 	}
 
 	private nextRunId(): string {
-		return `run-${this.now()}-${++this.runSequence}`;
+		return randomUUID();
 	}
 
 	private resolveSelectedSteps(steps?: readonly PlanStep[]): readonly PlanStep[] {

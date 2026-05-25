@@ -12,6 +12,7 @@ export interface PersistenceWriterOptions {
 
 export interface RpcEventRecord {
 	readonly runId: string;
+	readonly agentId?: string;
 	readonly stepId: string;
 	readonly taskId: string;
 	readonly agentRunId?: string;
@@ -21,6 +22,7 @@ export interface RpcEventRecord {
 
 export interface ChildStderrRecord {
 	readonly runId: string;
+	readonly agentId?: string;
 	readonly stepId: string;
 	readonly taskId: string;
 	readonly agentRunId?: string;
@@ -44,7 +46,7 @@ export function createPersistenceWriter(options: PersistenceWriterOptions) {
 		async appendRpcEvent(record: RpcEventRecord): Promise<string> {
 			return appendJsonLine(
 				options.rpcEventDir,
-				join(sanitize(record.runId), buildTaskFileName(record.stepId, record.taskId, record.agentRunId, "jsonl")),
+				join(sanitize(record.runId), `${sanitize(record.agentId ?? record.agentRunId ?? "unknown-agent")}.jsonl`),
 				record,
 			);
 		},
@@ -52,7 +54,7 @@ export function createPersistenceWriter(options: PersistenceWriterOptions) {
 		async writeChildStderr(record: ChildStderrRecord): Promise<string> {
 			return writeJsonFile(
 				options.childStderrDir,
-				join(sanitize(record.runId), buildTaskFileName(record.stepId, record.taskId, record.agentRunId, "log")),
+				join(sanitize(record.runId), `${sanitize(record.agentId ?? record.agentRunId ?? "unknown-agent")}.log`),
 				record.stderrTail,
 			);
 		},
@@ -88,11 +90,6 @@ function resolveFilePath(baseDir: string | undefined, relativePath: string): str
 		return undefined;
 	}
 	return join(baseDir, relativePath);
-}
-
-function buildTaskFileName(stepId: string, taskId: string, agentRunId: string | undefined, extension: string): string {
-	const suffix = agentRunId ? `__${sanitize(agentRunId)}` : "";
-	return `${sanitize(stepId)}__${sanitize(taskId)}${suffix}.${extension}`;
 }
 
 function sanitize(value: string): string {

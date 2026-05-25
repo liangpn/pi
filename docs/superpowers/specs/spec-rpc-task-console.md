@@ -352,6 +352,14 @@ interface TaskConversationMessage {
 
 系统回执和对话区域任务消息由后端状态变化生成，不由 agent 自由文本生成。
 
+运行态 ID 规则：
+
+- runtime 自生成 ID 统一使用标准 UUID 文本格式：`8-4-4-4-12`，例如 `550e8400-e29b-41d4-a716-446655440000`。
+- `run.id`、log id、message id、receipt id、card id、attempt id、agent 关联 id 都使用同一 UUID 格式。
+- ID 不拼接 `stepId`、`taskId`、时间戳、事件类型或 agent run 长字符串。
+- `stepId`、`taskId` 等业务定位字段继续作为独立字段保存，不进入文件名和 runtime 自生成 ID。
+- RPC request id 仍遵守 Pi RPC 协议；它不是 task id，也不是 runtime log/message/card id。
+
 ## 任务结果和卡片契约
 
 子 agent 只返回当前 task 的结果。
@@ -615,7 +623,7 @@ RPC request id 不是 task id，也不是 agent run id。`prompt` success 只表
 
 - 不从自然语言文本驱动 task 状态。
 - 不把 streaming delta 当作最终结构化 task result。
-- `message_update` 只用于 UI/log 流式诊断。
+- `message_update` 只可用于显式开启的 debug 流式诊断，不进入默认人工验收日志。
 - assistant `message_end` 是解析最终 `{ content, data? }` 的唯一正常输入事件。
 - `agent_end` 是子 agent 会话终止信号；dispatcher 在收到该事件时必须确认 attempt 是否已经进入终态。
 - `turn_end` 表示一个 assistant response 及该 response 触发的 tool results 完成。
@@ -625,6 +633,15 @@ RPC request id 不是 task id，也不是 agent run id。`prompt` success 只表
 - tool error 必须进入 task logs，但不直接使 attempt fail；Pi 会把 tool error 作为 tool result 放回模型上下文，直到 attempt 命中终态失败条件。
 - process error、validation error、MCP/extension fatal error 必须进入 task logs，并使当前 attempt fail。
 - 旧 run 或已 settled task 的迟到事件必须被忽略。
+
+默认日志规则：
+
+- 默认人工验收日志只保存完整事实，不保存流式 delta 结构。
+- `message_update`、`message_start`、`tool_execution_update` 不写入默认 task logs 和默认 RPC event 持久化文件。
+- 完整 assistant message 只从 `message_end` 记录；日志中优先保存最终 `content`、解析结果、校验错误摘要和必要上下文字段。
+- 工具日志保留 `tool_execution_start` 和 `tool_execution_end`；不保存 partial result 流式更新。
+- 进程、校验、重试、stop/replace、stale event 诊断保留，但 detail 必须避免写入大段 streaming event 原始结构。
+- 如果后续需要完整 raw trace，必须通过单独 debug 配置显式开启；debug trace 不作为默认人工验收输出。
 
 Pi 事件生命周期出处：
 
@@ -687,7 +704,7 @@ POC 使用配置文件保存本地 provider、runtime 和 MCP 细节，避免硬
 
 - `.env`：本地密钥、配置文件路径、端口、Pi command、输出目录。
 - `llm.config.json`：OpenAI-compatible provider/base URL/model 信息。
-- `mcp.config.json`：MCP Streamable HTTP endpoints 和工具映射。
+- `mcp.config.json`：MCP 相关本地配置入口；最终字段、schema 来源和是否保留手写工具映射需等待 MCP 调研确认。
 - `runtime.config.json`：并发上限、stop timeout、task retry、tool call limit 等调度器参数。
 - child Pi RPC process 使用的 `settings.json`：Pi retry、provider timeout、provider retry、transport 等 Pi 运行配置。
 
@@ -744,13 +761,13 @@ interface RuntimeConfig {
 PI_DEMO_PORT=4175
 PI_DEMO_PI_COMMAND=../../node_modules/.bin/tsx
 PI_DEMO_PI_ARGS=
-PI_DEMO_OUTPUT_DIR=.rpc-task-console
-PI_DEMO_SNAPSHOT_DIR=.rpc-task-console/snapshots
-PI_DEMO_LOG_DIR=.rpc-task-console/logs
-PI_DEMO_RPC_EVENT_DIR=.rpc-task-console/rpc-events
-PI_DEMO_CHILD_STDERR_DIR=.rpc-task-console/stderr
-PI_DEMO_CONVERSATION_DIR=.rpc-task-console/conversation
-PI_DEMO_CHILD_AGENT_DIR=.rpc-task-console/pi-agent
+PI_DEMO_OUTPUT_DIR=logs
+PI_DEMO_SNAPSHOT_DIR=logs/snapshots
+PI_DEMO_LOG_DIR=logs/logs
+PI_DEMO_RPC_EVENT_DIR=logs/rpc-events
+PI_DEMO_CHILD_STDERR_DIR=logs/stderr
+PI_DEMO_CONVERSATION_DIR=logs/conversation
+PI_DEMO_CHILD_AGENT_DIR=logs/pi-agent
 PI_DEMO_CHILD_SESSION_DIR=
 PI_DEMO_ENABLE_CHILD_SESSION=false
 PI_DEMO_LLM_CONFIG=llm.config.json
@@ -760,8 +777,9 @@ PI_DEMO_RUNTIME_CONFIG=runtime.config.json
 
 配置规则：
 
-- 所有相对路径都相对 example 目录解析。
-- `PI_DEMO_OUTPUT_DIR` 是默认输出根目录。
+- 默认输出目录位于项目根目录 `logs/`，不再写入 example 目录下的 `.rpc-task-console/`。
+- `PI_DEMO_OUTPUT_DIR` 是默认输出根目录；默认值按项目根目录解析为 `logs/`。
+- 显式配置的相对输出路径必须按项目根目录解析，避免运行产物散落到 example 源码目录。
 - 未单独配置的输出目录从 `PI_DEMO_OUTPUT_DIR` 派生。
 - 日志、snapshot、RPC events、conversation messages 必须可以通过配置输出到不同目录。
 - `PI_DEMO_CHILD_AGENT_DIR` 用作 child Pi RPC process 的 `PI_CODING_AGENT_DIR`。
@@ -770,22 +788,51 @@ PI_DEMO_RUNTIME_CONFIG=runtime.config.json
 - `PI_DEMO_ENABLE_CHILD_SESSION=true` 且 `PI_DEMO_CHILD_SESSION_DIR` 为空时，server 启动必须失败并输出配置错误。
 - 无论是否启用 Pi child session，TaskStore 持久化和 runtime logs 都是第一版事实源。
 
+默认输出文件命名：
+
+```text
+logs/
+  snapshots/
+    <run-uuid>.json
+  logs/
+    <run-uuid>.jsonl
+  conversation/
+    <run-uuid>.jsonl
+  rpc-events/
+    <run-uuid>/
+      <agent-uuid>.jsonl
+  stderr/
+    <run-uuid>/
+      <agent-uuid>.log
+```
+
+规则：
+
+- 文件名只使用 UUID 和固定文件扩展名，不拼接 `stepId`、`taskId`、事件类型或长 agent run id。
+- `rpc-events/<run-uuid>/<agent-uuid>.jsonl` 中的 `agent-uuid` 是 runtime 为 child agent/attempt 分配的稳定关联 ID。
+- 每条 JSON record 内保留 `runId`、`agentId`、`stepId`、`taskId`、`attemptId` 等字段用于定位。
+- `snapshot` 文件可以反复覆盖当前 run 最新状态；`logs`、`conversation`、`rpc-events` 使用 JSONL append。
+- 旧的 `packages/coding-agent/examples/rpc-task-console/.rpc-task-console/` 属于历史 demo 运行产物，可安全删除；不得依赖该目录作为新默认输出位置。
+
 ## MCP 和工具权限
 
-当前 POC 中，Pi core 不直接读取 `mcpServers`。Adapter 是一个 Pi extension，负责：
+MCP 接入方案需要先调研 Pi 文档和仓库实现后再最终确认。当前第一版不再把手写 MCP tool schema 或手写 Streamable HTTP client 作为已确认架构。
 
-- 读取配置好的 MCP tools。
-- 注册 Pi tools。
-- 将 tool calls 转发到配置的 MCP Streamable HTTP servers。
-- 返回 text content 和 structured details。
-- 将 MCP/protocol errors 转成 tool errors，而不是让 child Pi process 崩溃。
+调研必须确认：
+
+- Pi 是否已有原生 MCP 配置入口。
+- Pi 是否能通过 MCP `tools/list` 自动发现 tool schema。
+- task console 是否应该删除本地手写 tool schema。
+- Streamable HTTP 是否已有项目内实现、依赖库或官方接入方式，是否不应在示例中从头实现。
+- 子 agent 工具 schema 应由 Pi runtime 传给模型，还是需要 task console 在 prompt 中补充。
+- task `tools` allowlist 应该在 Pi CLI、extension adapter、MCP client 或多层共同约束。
 
 工具权限规则：
 
 - `PlanTask.tools` 是子 agent 的工具 allowlist。
 - dispatcher 创建 child Pi RPC process 时，只能启用 task allowlist 中的工具，以及工程配置显式允许的最小系统工具。
-- MCP adapter 只能暴露配置文件中注册过、且被当前 task allowlist 允许的工具。
-- Pi subagent 示例已使用 `--tools` 传入子 agent 可用工具集合；task console 后续 plan 应复用同类机制。
+- MCP 接入最终实现必须保留 task allowlist 语义。
+- 在 MCP 调研结论落地前，不得继续基于现有 `mcp.config.json` 手写 schema 方案扩大实现范围。
 
 ## HTTP 和实时 API
 
@@ -801,6 +848,14 @@ Routes：
 - `POST /runs/stop`
 - `POST /runs/replace`
 - `POST /runs/reset`
+
+验收辅助入口：
+
+- 顶部右上角提供“测试”按钮。
+- “测试”按钮读取当前指令输入框内容，并用公安 workflow JSON 作为预置 `steps` 调用 `/runs/start`。
+- 如果指令输入框为空，前端弹框提示，不启动 run。
+- 指令输入框默认文本必须与 `docs/superpowers/plans/run-police-workflow.mjs` 的默认 `userInstruction` 一致。
+- 对话框中的正常 start、stop、replace 交互语义不因“测试”按钮改变。
 
 SSE 要求：
 
@@ -868,6 +923,14 @@ UI 是公安指挥工作流的高密度操作控制台，不是营销页。
 
 后端 POC 允许使用更小的 demo workflow 做快速验证；业务场景以公安指挥 workflow 为准。
 
+人工验收辅助脚本：
+
+- `docs/superpowers/plans/run-police-workflow.mjs` 作为命令行验收入口。
+- 脚本读取 `docs/superpowers/specs/references/police-command-workflow.json`。
+- 脚本默认使用与前端指令输入框一致的 `userInstruction`。
+- 脚本把 `steps + userInstruction` 写入 `/runs/start` 请求 JSON，不创建或修改 workflow 参考 JSON 文件。
+- 脚本不包含 snapshot 轮询逻辑；运行状态通过浏览器 UI、`GET /api/snapshot` 或输出日志查看。
+
 ## 校验和测试
 
 后端测试应覆盖：
@@ -902,7 +965,11 @@ UI 是公安指挥工作流的高密度操作控制台，不是营销页。
 - stop timeout 配置生效。
 - SSE snapshot 格式。
 - static file allowlist。
-- 使用 fake servers 验证 MCP Streamable HTTP adapter。
+- 默认日志不写入 streaming `message_update`、`message_start`、`tool_execution_update` 结构。
+- runtime 自生成 ID 和持久化文件名使用 UUID，不拼接 task id 或长 agent run id。
+- “测试”按钮使用公安 workflow JSON 和当前指令输入框内容触发 `/runs/start`。
+- `run-police-workflow.mjs` 使用同一默认 `userInstruction` 触发公安 workflow。
+- MCP 接入实现必须在 Pi 文档和仓库调研结论确认后再调整测试；现有 fake MCP Streamable HTTP adapter 测试不能作为最终架构依据。
 
 ## 参考文档
 
