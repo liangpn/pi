@@ -9,6 +9,95 @@
 - 未完成: Task 10 Step 5 手动 demo 验收。
 - 主会话职责: control-plane 复核、计划/ledger 更新、子代理委派和验证调度；主会话不得接管业务代码实现。
 
+## 2026-05-26 MCP package 调研事实
+
+### 调研过程
+
+- 委派对象: `019e5ff6-0c8f-7840-87c8-72f1e6b1b590` / Archivist，角色为只读 `docs_researcher`；本轮只委派 1 个子代理。
+- 生命周期: 主会话通过 `wait_agent` 收到 `completed`，随后收到同一 payload 的 subagent notification；主会话已读取最终报告并调用 `close_agent`，关闭返回的 previous status 为 `completed`。
+- 本地证据范围: ledger/spec/plan、当前 demo MCP adapter 三文件、`task-dispatcher.ts`、`env.ts`、MCP config、`rpc.md`、`sdk.md`、`extensions.md`、`packages.md`、`usage.md`、`sdk.ts`、`agent-session.ts`、`index.ts`。
+- Web 证据范围: `pi-mcp-adapter` GitHub README/package、npm registry、Pi package 页面。
+
+### 当前实现事实
+
+- 当前 demo MCP adapter 文件:
+  - `packages/coding-agent/examples/rpc-task-console/mcp-config.ts`
+  - `packages/coding-agent/examples/rpc-task-console/mcp-streamable-http-client.ts`
+  - `packages/coding-agent/examples/rpc-task-console/extensions/mcp-tools.ts`
+- 当前 demo MCP adapter 职责: 自定义 MCP 配置解析、MCP SDK/HTTP client 封装、把 remote MCP tools 注册成 Pi tools。
+- 当前 runtime 的 child 启动和 task allowlist 主链路在 `task-dispatcher.ts`，会把 task `tools` 转成 child `--tools` / `--no-tools`，并把同一 allowlist 写入 `PI_DEMO_TASK_ALLOWED_TOOLS` 供 adapter 二次过滤。
+- 当前 demo 已经使用官方 MCP SDK、`tools/list` 自动发现 schema、`callTool()` 执行真实 MCP；`mcp-streamable-http-client.ts` 只包装底层错误消息。
+
+### `pi-mcp-adapter` package 事实
+
+- `pi-mcp-adapter` 是 Pi package/extension，不是 Task Console runtime。
+- `pi-mcp-adapter` package 元数据声明 Pi extension，依赖 `@modelcontextprotocol/sdk`。
+- `pi-mcp-adapter` README 说明它读取标准 MCP 配置，默认提供单一 `mcp` 代理工具，可选 `directTools` 把指定 MCP tools 注册为一等 Pi tools。
+- `pi-mcp-adapter` 也依赖官方 MCP SDK，并支持 HTTP endpoint 的 StreamableHTTP / SSE fallback。
+- `pi-mcp-adapter directTools` 依赖 metadata cache；README 说明首次启用某 server 的 direct tools 时，如果 cache 不存在，会先退回 proxy-only 并在后台填充 cache。
+- `pi.dev/packages/pi-mcp-adapter` 显示 `2.6.1`；npm registry latest 为 `2.8.0`，发布时间 `2026-05-25T06:32:22Z`。
+
+### 已确认的 MCP package 迁移决策
+
+- 版本: 使用 npm latest 对应的固定版本 `pi-mcp-adapter@2.8.0`，不在运行时使用 floating `@latest`。
+- 范围: `pi-mcp-adapter` 用于替换当前 demo MCP 接入层；不替换 Task Console runtime、dispatcher、TaskStore、SSE、cards、stop/replace、retry、持久化和结果校验职责。
+- 运行形态: 第一版继续保留 subprocess RPC runtime，不把 `AgentSession/SDK` 迁移作为本轮已批准架构。
+- 加载方式: 优先使用本地 package 路径或 repo 依赖加载 `pi-mcp-adapter`；不让每个 child attempt 通过 `--extension npm:pi-mcp-adapter` 临时安装。
+- 配置迁移: 当前 `mcp.config.json` 的 `servers.*` 迁到标准 `.mcp.json` 的 `mcpServers.*`；Pi 专属设置放到 `.pi/mcp.json` 或 child `PI_CODING_AGENT_DIR` 下的 `mcp.json`。
+
+### Tool 暴露和 allowlist 决策
+
+- `directTools` 必须使用；远端 MCP tool 需要暴露为一等 Pi tool，供 task `tools` allowlist 精确限制。
+- 默认单一 `mcp` proxy 工具禁用；第一版 Task Console 不把万能 MCP proxy 工具暴露给 child agent，也不把它加入 task allowlist。
+- Pi CLI/AgentSession 的 `tools` allowlist 作为主防线；adapter/package 层仍需要第二道限制，避免 proxy fallback 或额外 direct tools 绕过 task allowlist。
+- 当前 POC 可以暂用无前缀 tool name 以兼容现有公安 workflow。
+- 长期 tool identity 必须支持 MCP server name/id 前缀，建议格式为 `$mcp_server_name:tool_name`；后续 task `tools` 字段也应按该格式设计，以支持多个 MCP server 来源并避免 tool name 冲突。
+
+### Metadata cache 决策
+
+- 允许使用 `pi-mcp-adapter` metadata cache。
+- demo server 启动阶段必须执行 MCP tool discovery / cache prewarm。
+- cache prewarm 失败时，server 启动必须失败；不得等到 child agent 执行过程中才发现 direct tools 未注册。
+
+### 待进入 spec/plan 的文件范围
+
+- `packages/coding-agent/examples/rpc-task-console/env.ts`
+- `packages/coding-agent/examples/rpc-task-console/task-dispatcher.ts`
+- child settings/package loading 相关代码
+- 示例 MCP 配置文件
+- `packages/coding-agent/test/rpc-task-console.test.ts`
+- 当前 3 个 demo adapter 文件应退出 active path；删除或保留为历史代码需在 plan/spec 调整后决定。
+
+### Spec / Plan 更新状态
+
+- 已更新 `docs/superpowers/specs/spec-rpc-task-console.md`：第一版 MCP 接入改为 `pi-mcp-adapter@2.8.0` package 方向，并记录 `directTools`、proxy 禁用、metadata cache prewarm、长期 tool identity 前缀和 package 迁移不承诺修复 `terminated`。
+- 已更新 `docs/superpowers/plans/plan-rpc-task-console.md`：新增 Task 13，执行顺序为先迁移 MCP 接入层到 `pi-mcp-adapter`，再继续 Task 10 Step 5 完整人工 demo 验收。
+
+### 验证命令
+
+- `cd packages/coding-agent && npx tsx ../../node_modules/vitest/dist/cli.js --run test/rpc-task-console.test.ts`
+- `npm run check`
+- `cd packages/coding-agent && npm run example:rpc-task-console`
+- `node docs/superpowers/plans/run-police-workflow.mjs`
+- 真实 demo 日志需复核 direct tool 名称、allowlist 拒绝路径、`jcj-get-case-detail` 调用结果。
+
+## 2026-05-26 独立问题记录
+
+### 真实 MCP tool `terminated`
+
+- 历史现象: 真实 demo 中观察到 `MCP tool "jcj-get-case-detail" failed: terminated`。
+- 当前事实: 当前 demo 已经使用官方 MCP SDK、`tools/list` 和 `callTool()`；迁移到 `pi-mcp-adapter` 不能被记录为 `terminated` 的已确认修复。
+- 当前状态: `terminated` 根因未锁定，可能仍需通过真实 run 日志、远端 server 状态、参数、鉴权、会话或服务端执行路径单独排查。
+
+### 真实模型输出结构不稳定
+
+- 历史现象: 已观察到真实模型输出不满足 `data_structure`，例如 `task_lookup_address_by_coordinate` 缺少 `data.coordinate`。
+- 当前状态: 该问题独立于 MCP package 迁移，需要在真实 demo 验收中继续记录。
+
+### 浏览器人工视觉验收
+
+- 当前状态: 侧栏拖拽吸附、375px 移动端横向滚动、真实 DOM node identity、卡片最大化不覆盖侧栏仍需人工确认。
+
 ## 当前事实摘要
 
 - UI 已拆分为真实 `index.html`、`styles.css`、`app.js`，server 不再从 `index.html` 正则拆分内联资源。
@@ -37,14 +126,7 @@
   - `packages/coding-agent/examples/rpc-task-console/extensions/mcp-tools.ts`
 - task tools allowlist 继续多层强制: Pi CLI/AgentSession 是主防线，adapter/MCP wrapper 也拒绝未发现或未允许的工具。
 - 真实 MCP endpoint `http://192.168.20.21:30080/pacc-mcp-server/mcp?toolset=shijiazhuang&clientid=zyhxx` 可建立 SSE 连接。
-
-## Package Hub 调研结论
-
-- `pi-mcp-adapter` 可以替代当前 demo MCP adapter 的大部分 MCP 接入层，但不能替代 Task Console 的 runtime、dispatcher、TaskStore、SSE、cards、stop/replace 机制。
-- 若迁移到 `pi-mcp-adapter`，最小路径是只替换 MCP 接入层，保留当前 RPC Task Runtime；配置从当前自定义 `mcp.config.json` 迁到标准 `.mcp.json` / `.pi/mcp.json`，并处理 task 级 allowlist 和 tool name 前缀策略。
-- `pi-mcp-adapter` 的 package 路线更标准、更少自维护代码，但不能保证直接解决真实 tool `terminated`，因为当前实现已经使用官方 SDK 和 `tools/list`。
-- `pi-subagents` 适合作为第二版主 agent 编排层的参考，不适合替代第一版 deterministic task runtime。当前第一版需要 dispatcher 控制每个 task attempt、重试、stop/replace、TaskStore、SSE 和持久化。
-- 后续大改时，比 package hub 更大的架构问题是 child 是否继续用 subprocess RPC，还是迁到 Node 内嵌 `AgentSession`。
+- 默认 demo workflow 的 task tools 为空，不覆盖 MCP；验 MCP 必须使用公安 workflow JSON 或前端“测试”按钮。
 
 ## 自动化验证
 
@@ -63,19 +145,8 @@
 - LLM endpoint `http://192.168.20.20:9111/v1/models` 返回 200。
 - MCP endpoint 可建立 SSE 连接，返回 `text/event-stream`。
 - 使用公安 workflow 触发真实 run 后，child Pi process 启动，MCP tool call 链路进入真实执行。
-- 已观察到真实 MCP tool: `jcj-get-case-detail`。
-- 已观察到历史失败结果: `MCP tool "jcj-get-case-detail" failed: terminated`。
 - 第一阶段 task 后续输出 fallback JSON content，runtime 写入 conversation message。
 - 第二阶段按并发上限启动 2 个 task。
-- 已观察到真实模型输出不满足 `data_structure` 导致 validation fail，例如 `task_lookup_address_by_coordinate` 缺少 `data.coordinate`。
-
-## 当前风险点
-
-- 真实远端 MCP tool 调用仍需重新验证。历史记录中的 `terminated` 可能来自远端 server、参数、鉴权、会话或服务端执行失败；当前代码已改成 SDK + `tools/list` + remote schema，但尚未确认最新代码下是否仍复现。
-- package hub 的 `pi-mcp-adapter` 可作为降维护成本方案，但迁移会改变配置入口和可能的 tool name 策略；这需要先改 spec/plan，不能直接在实现里替换。
-- 真实模型输出结构仍不稳定，已观察到缺少 `data.text`、`data.gbids`、`data.coordinate` 或返回非契约形状导致 validation fail。
-- 未完成人工浏览器视觉验收: 侧栏拖拽吸附、375px 移动端横向滚动、真实 DOM node identity、卡片最大化不覆盖侧栏。
-- 默认 demo workflow 的 task tools 为空，不覆盖 MCP；验 MCP 必须使用公安 workflow JSON 或前端“测试”按钮。
 
 ## 调试入口
 

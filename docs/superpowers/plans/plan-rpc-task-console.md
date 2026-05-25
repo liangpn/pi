@@ -33,7 +33,7 @@
 | Pi 事件处理 | `agent_end.willRetry` 已保留在 normalize 层 | dispatcher 对任意 `agent_end` 直接结算；未等待 provider retry | Task 4 |
 | 调度器 | step 基本串行，step 内 task 并行 | step 内并行无上限；无 attempt retry；无 tool call 上限 | Task 5 |
 | 停止和替换 | 有 stop 和 replace 雏形 | stop 直接 abort + SIGTERM；replace 不等旧 run cleanup | Task 6 |
-| MCP 和工具权限 | MCP 通过 extension adapter 接入 | task allowlist 未强制；adapter 注册全部配置工具；MCP errors 未显式转 tool error | Task 7 |
+| MCP 和工具权限 | MCP 通过 demo extension adapter 接入；Task 12 已改为官方 SDK + `tools/list` + `callTool()` | 需要迁移到 `pi-mcp-adapter@2.8.0` package，退出 demo adapter active path，并固化 `directTools`、proxy 禁用、cache prewarm 和 tool identity 策略 | Task 13 |
 | HTTP/SSE API | 有 `GET /events` 和 snapshot SSE | action routes 是 `/api/*`，缺 `/runs/start|stop|replace|reset`；无 replace route | Task 8 |
 | UI | 能从 snapshot 动态渲染部分内容 | 内联 CSS/JS；初始硬编码业务卡片；无 conversationMessages；智能协同侧栏固定右侧；卡片网格未按可用空间优先 3 列；状态局部更新和可访问性不足 | Task 9 |
 | 验证 | 有单文件 Vitest 覆盖基础路径 | 缺 spec 关键验收测试和手动验收清单 | Task 10 |
@@ -54,6 +54,8 @@
 - `packages/coding-agent/examples/rpc-task-console/mcp-config.ts`
 - `packages/coding-agent/examples/rpc-task-console/mcp-streamable-http-client.ts`
 - `packages/coding-agent/examples/rpc-task-console/extensions/mcp-tools.ts`
+- `packages/coding-agent/examples/rpc-task-console/.mcp.json`（如采用项目内示例配置）
+- `packages/coding-agent/examples/rpc-task-console/.pi/mcp.json`（如采用项目内示例配置）
 - `packages/coding-agent/test/rpc-task-console.test.ts`
 
 新增：
@@ -1067,7 +1069,7 @@ npm run check
 
 - [ ] **Step 5: 手动 demo 验收**
 
-当前进入人工验收阶段。自动化测试和 repo check 已通过；真实 demo 已能启动，并已验证 child Pi process、LLM、MCP 链路进入真实执行。完整手动验收尚未勾选，原因是当前 MCP 接入架构需要先调研确认，真实 MCP 工具返回 `terminated`，且真实模型输出仍会出现不满足 `data_structure` 的情况。
+当前进入人工验收阶段。自动化测试和 repo check 已通过；真实 demo 已能启动，并已验证 child Pi process、LLM、MCP 链路进入真实执行。完整手动验收尚未勾选，原因是 Task 13 需要先把 MCP 接入层迁移到 `pi-mcp-adapter@2.8.0`，真实 MCP 工具返回 `terminated` 仍需独立排查，真实模型输出仍会出现不满足 `data_structure` 的情况。
 
 历史运行产物 `packages/coding-agent/examples/rpc-task-console/.rpc-task-console/` 可以清理；Task 11 后默认运行输出改为项目根目录 `logs/`。
 
@@ -1084,7 +1086,7 @@ npm run check
 
 ### 待人工确认
 
-- [ ] MCP 接入方案已根据 Pi 文档和仓库调研重新确认；不得先基于当前手写 schema / hand-rolled Streamable HTTP client 扩大实现。
+- [ ] MCP 接入层已迁移到 `pi-mcp-adapter@2.8.0`，当前 demo adapter 文件退出 active path。
 - [ ] `jcj-get-case-detail` 等真实 MCP tool 能成功返回业务数据，而不是 `terminated`。
 - [ ] 模型最终输出稳定满足 `{ content, data? }` 和 task `data_structure`。
 - [ ] 配置 `card_type` 的 task 成功创建 card。
@@ -1394,3 +1396,114 @@ npx tsx ../../node_modules/vitest/dist/cli.js --run test/rpc-task-console.test.t
 ```bash
 npm run check
 ```
+
+---
+
+## Task 13: 迁移 MCP 接入层到 `pi-mcp-adapter` package
+
+**目标：** 保留第一版 subprocess RPC Task Runtime，只把 demo MCP 接入层迁移到 `pi-mcp-adapter@2.8.0` package。该任务不解决 Task Console runtime、dispatcher、TaskStore、SSE、cards、stop/replace、retry、持久化或结果校验问题，也不承诺修复真实 MCP tool `terminated`。
+
+**顺序：** Task 13 必须先于 Task 10 Step 5 的完整人工 demo 验收完成。`terminated`、模型输出结构不稳定和浏览器视觉验收仍作为 Task 10 Step 5 的独立验收/排查项。
+
+**文件：**
+
+- 修改：`packages/coding-agent/examples/rpc-task-console/env.ts`
+- 修改：`packages/coding-agent/examples/rpc-task-console/task-dispatcher.ts`
+- 修改：`packages/coding-agent/examples/rpc-task-console/child-settings.ts`（如需要同步 Pi MCP adapter 配置到 child agent dir）
+- 修改：`packages/coding-agent/examples/rpc-task-console/mcp.config.example.json`（如保留兼容提示或迁移说明）
+- 修改：`packages/coding-agent/examples/rpc-task-console/mcp.config.json`（如必须）
+- 新增/修改：标准 `.mcp.json` 示例配置（具体路径由实现确认）
+- 新增/修改：Pi adapter `.pi/mcp.json` 示例配置（具体路径由实现确认）
+- 修改：`packages/coding-agent/package.json`
+- 修改：`package-lock.json`
+- 修改：`packages/coding-agent/test/rpc-task-console.test.ts`
+- 退出 active path：`packages/coding-agent/examples/rpc-task-console/mcp-config.ts`
+- 退出 active path：`packages/coding-agent/examples/rpc-task-console/mcp-streamable-http-client.ts`
+- 退出 active path：`packages/coding-agent/examples/rpc-task-console/extensions/mcp-tools.ts`
+
+- [ ] **Step 1: 固定 package 版本和加载方式**
+
+要求：
+
+- 使用固定版本 `pi-mcp-adapter@2.8.0`，不得使用 floating `@latest`。
+- 优先通过本地 package 路径或 repo 依赖加载 adapter。
+- 不得让每个 task attempt 通过 `--extension npm:pi-mcp-adapter` 临时安装。
+- 保留第一版 subprocess RPC runtime；不得把本任务扩大为 `AgentSession` / SDK 嵌入式迁移。
+
+- [ ] **Step 2: 迁移配置入口**
+
+要求：
+
+- 将当前 demo `mcp.config.json` 中的 MCP server 连接信息迁到标准 `.mcp.json` / `mcpServers` 配置。
+- 将 Pi adapter 专属配置迁到 `.pi/mcp.json` 或 child `PI_CODING_AGENT_DIR` 下的 `mcp.json`。
+- `PI_DEMO_MCP_CONFIG` 指向标准 MCP server 配置。
+- `PI_DEMO_PI_MCP_CONFIG` 指向 Pi adapter 专属配置，或启动时同步到 child agent dir。
+- 配置中必须表达允许暴露的 remote MCP tools；不得依赖手写 tool schema 作为默认 schema 来源。
+
+- [ ] **Step 3: 强制 directTools 并禁用 proxy mcp**
+
+要求：
+
+- 必须使用 `directTools` 把允许暴露的 remote MCP tools 注册为一等 Pi tools。
+- 默认单一 `mcp` proxy 工具必须禁用。
+- task `tools` allowlist 不得允许万能 `mcp` proxy。
+- 当前 POC 可以暂用无前缀 tool name 以兼容现有公安 workflow。
+- 长期 tool identity 必须保留 MCP server name/id 前缀方案，建议格式为 `$mcp_server_name:tool_name`；后续 task `tools` 字段应按该格式设计。
+
+- [ ] **Step 4: 保留多层 allowlist**
+
+要求：
+
+- dispatcher 继续通过 `--tools` / `--no-tools` 限制 child agent 工具集合。
+- Pi CLI / AgentSession `tools` allowlist 仍是主防线。
+- Adapter/package 层必须保留第二道限制，避免 proxy fallback 或额外 direct tools 绕过 task allowlist。
+- 若 adapter/package 无法表达第二道限制，必须记录阻塞并回到 spec/plan 重新决策，不得放宽 task allowlist 语义。
+
+- [ ] **Step 5: 实现 metadata cache prewarm**
+
+要求：
+
+- demo server 启动阶段必须执行 MCP tool discovery / metadata cache prewarm。
+- prewarm 成功后，child agent 再启动 task attempt。
+- prewarm 失败时，server 启动必须失败并输出明确配置/连接错误。
+- 不得等到 child agent 执行过程中才发现 direct tools 未注册。
+
+- [ ] **Step 6: 让 demo adapter 退出 active path**
+
+要求：
+
+- `mcp-config.ts`、`mcp-streamable-http-client.ts`、`extensions/mcp-tools.ts` 不再参与正常 demo MCP 接入链路。
+- 是否删除这些文件由实现风险决定；若保留，必须确保测试和 runtime 不再依赖其 active path。
+- 不得删除与 Task Console runtime、dispatcher、TaskStore、SSE、cards、stop/replace、retry、持久化和结果校验相关的功能。
+
+- [ ] **Step 7: 更新测试**
+
+测试至少覆盖：
+
+- 使用固定 `pi-mcp-adapter@2.8.0` 或对应本地 package 入口。
+- 标准 `.mcp.json` / Pi adapter config 被加载或同步到 child agent dir。
+- `directTools` 被启用。
+- 默认 proxy `mcp` 工具不暴露给 child agent，且不允许出现在 task allowlist 中。
+- task `tools` allowlist 仍通过 `--tools` / `--no-tools` 生效。
+- adapter/package 层拒绝未允许工具或未发现工具。
+- metadata cache prewarm 成功路径。
+- metadata cache prewarm 失败导致 server 启动失败。
+- 当前 POC 裸 tool name 兼容公安 workflow。
+- 长期 `$mcp_server_name:tool_name` tool identity 策略有配置或校验占位，不被当前 POC 实现反向阻断。
+
+- [ ] **Step 8: 运行验证**
+
+运行：
+
+```bash
+cd packages/coding-agent
+npx tsx ../../node_modules/vitest/dist/cli.js --run test/rpc-task-console.test.ts
+```
+
+代码修改完成后：
+
+```bash
+npm run check
+```
+
+人工 demo 验证继续走 Task 10 Step 5；真实 `jcj-get-case-detail` 是否仍出现 `terminated` 只记录为独立排查结果，不作为 Task 13 成功条件。

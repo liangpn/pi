@@ -36,7 +36,7 @@ RPC 任务控制台是一个基于 Pi 的主从多 agent 架构 POC。
 - 当 task 配置了 `card_type` 时，task 完成后必须创建 UI card；未配置 `card_type` 时不得创建 UI card。
 - task attempt 级失败重试，并通过参数控制最大尝试次数。
 - 用户停止和新指令替换流程。
-- MCP 工具通过 Pi extension adapter 接入，不让 Pi core 直接读取 MCP config。
+- MCP 工具通过 `pi-mcp-adapter` Pi package/extension 接入，不让 Task Console runtime 自行实现 MCP client 或手写 MCP tool schema。
 - demo 级本地文件持久化：snapshot、logs、RPC events、stderr、conversation task messages 和 runtime 输出目录都必须可配置。第一版不要求数据库、分布式存储、高可用或跨进程恢复。
 
 第一版不包含：
@@ -704,7 +704,8 @@ POC 使用配置文件保存本地 provider、runtime 和 MCP 细节，避免硬
 
 - `.env`：本地密钥、配置文件路径、端口、Pi command、输出目录。
 - `llm.config.json`：OpenAI-compatible provider/base URL/model 信息。
-- `mcp.config.json`：MCP 相关本地配置入口；最终字段、schema 来源和是否保留手写工具映射需等待 MCP 调研确认。
+- `.mcp.json`：标准 MCP server 配置入口，保存 MCP server transport、url、headers/auth 等连接信息。
+- `.pi/mcp.json` 或 child `PI_CODING_AGENT_DIR` 下的 `mcp.json`：Pi MCP adapter 专属配置，保存 `directTools`、tool 命名策略和 package adapter 行为。
 - `runtime.config.json`：并发上限、stop timeout、task retry、tool call limit 等调度器参数。
 - child Pi RPC process 使用的 `settings.json`：Pi retry、provider timeout、provider retry、transport 等 Pi 运行配置。
 
@@ -771,7 +772,8 @@ PI_DEMO_CHILD_AGENT_DIR=logs/pi-agent
 PI_DEMO_CHILD_SESSION_DIR=
 PI_DEMO_ENABLE_CHILD_SESSION=false
 PI_DEMO_LLM_CONFIG=llm.config.json
-PI_DEMO_MCP_CONFIG=mcp.config.json
+PI_DEMO_MCP_CONFIG=.mcp.json
+PI_DEMO_PI_MCP_CONFIG=.pi/mcp.json
 PI_DEMO_RUNTIME_CONFIG=runtime.config.json
 ```
 
@@ -783,6 +785,8 @@ PI_DEMO_RUNTIME_CONFIG=runtime.config.json
 - 未单独配置的输出目录从 `PI_DEMO_OUTPUT_DIR` 派生。
 - 日志、snapshot、RPC events、conversation messages 必须可以通过配置输出到不同目录。
 - `PI_DEMO_CHILD_AGENT_DIR` 用作 child Pi RPC process 的 `PI_CODING_AGENT_DIR`。
+- `PI_DEMO_MCP_CONFIG` 指向标准 MCP server 配置；默认使用项目配置中的 `.mcp.json`。
+- `PI_DEMO_PI_MCP_CONFIG` 指向 Pi MCP adapter 专属配置；默认使用项目配置中的 `.pi/mcp.json`，或在启动时同步到 child `PI_CODING_AGENT_DIR` 下的 `mcp.json`。
 - 第一版默认 `PI_DEMO_ENABLE_CHILD_SESSION=false`，child Pi RPC process 继续使用 `--no-session`。
 - 当 `PI_DEMO_ENABLE_CHILD_SESSION=true` 时，dispatcher 必须移除 `--no-session`，并把 `PI_DEMO_CHILD_SESSION_DIR` 作为 child Pi RPC process 的 session directory。
 - `PI_DEMO_ENABLE_CHILD_SESSION=true` 且 `PI_DEMO_CHILD_SESSION_DIR` 为空时，server 启动必须失败并输出配置错误。
@@ -816,23 +820,32 @@ logs/
 
 ## MCP 和工具权限
 
-MCP 接入方案需要先调研 Pi 文档和仓库实现后再最终确认。当前第一版不再把手写 MCP tool schema 或手写 Streamable HTTP client 作为已确认架构。
+MCP 接入采用 `pi-mcp-adapter@2.8.0`。该 package 是 Pi extension，不是 Task Console runtime；它只能替换 MCP 接入层，不能替代 TaskDispatcher、TaskStore、SSE、cards、stop/replace、retry、持久化和结果校验。
 
-调研必须确认：
+第一版继续使用 subprocess RPC runtime。`AgentSession` / SDK 嵌入式调用是后续候选方向，不作为第一版 MCP package 迁移的前提。
 
-- Pi 是否已有原生 MCP 配置入口。
-- Pi 是否能通过 MCP `tools/list` 自动发现 tool schema。
-- task console 是否应该删除本地手写 tool schema。
-- Streamable HTTP 是否已有项目内实现、依赖库或官方接入方式，是否不应在示例中从头实现。
-- 子 agent 工具 schema 应由 Pi runtime 传给模型，还是需要 task console 在 prompt 中补充。
-- task `tools` allowlist 应该在 Pi CLI、extension adapter、MCP client 或多层共同约束。
+MCP package 接入规则：
+
+- 依赖版本必须固定为 `pi-mcp-adapter@2.8.0`，不得在 child run 中使用 floating `@latest`。
+- adapter package 应通过本地 package 路径或 repo 依赖加载，不得让每个 task attempt 通过 `--extension npm:pi-mcp-adapter` 临时安装。
+- MCP server 连接信息使用标准 `.mcp.json` / `mcpServers` 配置。
+- Pi adapter 专属配置使用 `.pi/mcp.json` 或 child `PI_CODING_AGENT_DIR` 下的 `mcp.json`。
+- 必须使用 `directTools`，把允许暴露的 remote MCP tools 注册为一等 Pi tools。
+- 默认单一 `mcp` proxy 工具必须禁用，且不得加入 task allowlist。
+- demo server 启动阶段必须执行 MCP tool discovery / metadata cache prewarm。
+- metadata cache prewarm 失败时，server 启动必须失败并输出配置错误；不得等到 child agent 执行过程中才发现 direct tools 未注册。
+- package 迁移目标是降低自维护 MCP 接入代码，不是已确认修复真实 MCP tool `terminated`。
 
 工具权限规则：
 
 - `PlanTask.tools` 是子 agent 的工具 allowlist。
 - dispatcher 创建 child Pi RPC process 时，只能启用 task allowlist 中的工具，以及工程配置显式允许的最小系统工具。
 - MCP 接入最终实现必须保留 task allowlist 语义。
-- 在 MCP 调研结论落地前，不得继续基于现有 `mcp.config.json` 手写 schema 方案扩大实现范围。
+- Pi CLI / AgentSession 的 `tools` allowlist 是主防线。
+- Adapter/package 层必须保留第二道限制，避免 proxy fallback 或额外 direct tools 绕过 task allowlist。
+- 当前 POC 可以暂用无前缀 tool name 以兼容现有公安 workflow。
+- 长期 tool identity 必须支持 MCP server name/id 前缀，建议格式为 `$mcp_server_name:tool_name`；后续 task `tools` 字段也应按该格式设计，以支持多个 MCP server 来源并避免 tool name 冲突。
+- 当前 demo adapter 文件应退出 active path：`mcp-config.ts`、`mcp-streamable-http-client.ts`、`extensions/mcp-tools.ts`。是否删除这些文件由实施计划决定。
 
 ## HTTP 和实时 API
 
