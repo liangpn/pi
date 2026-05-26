@@ -2,6 +2,7 @@ import { readFile } from "node:fs/promises";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { prewarmMcpMetadataCache } from "./child-settings.js";
 import type { DemoEnv } from "./env.js";
 import { loadDemoEnv } from "./env.js";
 import { validatePlanSteps } from "./plan-validation.js";
@@ -46,6 +47,37 @@ export function createRpcTaskConsoleServer(demoEnv: DemoEnv, options: RpcTaskCon
 		sseClients.clear();
 	});
 	return server;
+}
+
+export async function startRpcTaskConsoleServer(
+	demoEnv: DemoEnv,
+	options: RpcTaskConsoleServerOptions = {},
+): Promise<Server> {
+	await prewarmMcpMetadataCache(demoEnv.childEnv);
+	const server = createRpcTaskConsoleServer(demoEnv, options);
+	await listen(server, demoEnv.port);
+	return server;
+}
+
+export function formatRpcTaskConsoleListenMessage(demoEnv: DemoEnv): string {
+	const target = demoEnv.publicUrl ?? `port ${demoEnv.port}`;
+	return `RPC task console listening on ${target}`;
+}
+
+function listen(server: Server, port: number): Promise<void> {
+	return new Promise((resolve, reject) => {
+		const onError = (error: Error) => {
+			server.off("listening", onListening);
+			reject(error);
+		};
+		const onListening = () => {
+			server.off("error", onError);
+			resolve();
+		};
+		server.once("error", onError);
+		server.once("listening", onListening);
+		server.listen(port);
+	});
 }
 
 async function handleRequest(
@@ -286,9 +318,13 @@ function toErrorMessage(error: unknown): string {
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
 	const demoEnv = loadDemoEnv(exampleDir, process.env);
-	const server = createRpcTaskConsoleServer(demoEnv);
-	server.listen(demoEnv.port, () => {
-		console.log(`RPC task console listening on http://localhost:${demoEnv.port}`);
-		console.log(`Child Pi command: ${demoEnv.piCommand} ${demoEnv.piArgs.join(" ")}`);
-	});
+	startRpcTaskConsoleServer(demoEnv)
+		.then(() => {
+			console.log(formatRpcTaskConsoleListenMessage(demoEnv));
+			console.log(`Child Pi command: ${demoEnv.piCommand} ${demoEnv.piArgs.join(" ")}`);
+		})
+		.catch((error: unknown) => {
+			console.error(`RPC task console startup failed: ${toErrorMessage(error)}`);
+			process.exitCode = 1;
+		});
 }

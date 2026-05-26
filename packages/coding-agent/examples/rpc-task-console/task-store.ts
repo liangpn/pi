@@ -167,7 +167,7 @@ export class TaskStore {
 			return;
 		}
 
-		if (isStateEvent(event) && this.isLateStateEvent(step, task)) {
+		if (isStateEvent(event) && isTerminalTaskStatus(task.status)) {
 			this.snapshot = {
 				...this.snapshot,
 				logs: [...this.snapshot.logs, this.createIgnoredStateLog(event, step, task)],
@@ -238,14 +238,6 @@ export class TaskStore {
 
 	private findStep(stepId: string): RuntimeStep | undefined {
 		return this.snapshot.run.steps.find((step) => step.id === stepId);
-	}
-
-	private isLateStateEvent(step: RuntimeStep, task: RuntimeTask): boolean {
-		return (
-			isTerminalRunStatus(this.snapshot.run.status) ||
-			isTerminalTaskStatus(step.status) ||
-			isTerminalTaskStatus(task.status)
-		);
 	}
 
 	private applyToTask(task: RuntimeTask, event: TaskStoreEvent): TaskMutation {

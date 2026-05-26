@@ -52,6 +52,7 @@
 		"ignore": "^7.0.5",
 		"jiti": "^2.7.0",
 		"minimatch": "^10.2.3",
+		"pi-mcp-adapter": "2.8.0",
 		"proper-lockfile": "^4.1.2",
 		"typebox": "^1.1.24",
 		"undici": "^8.3.0",

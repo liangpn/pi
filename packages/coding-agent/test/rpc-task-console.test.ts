@@ -1,5 +1,5 @@
 import { once } from "node:events";
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
@@ -7,10 +7,16 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, test } from "vitest";
 import { ChildAgentProcess, normalizeChildLine } from "../examples/rpc-task-console/child-agent-process.js";
-import { prepareChildSettings } from "../examples/rpc-task-console/child-settings.js";
-import { loadDemoEnv, type RpcTaskConsoleEnv } from "../examples/rpc-task-console/env.js";
-import { loadMcpConfig } from "../examples/rpc-task-console/mcp-config.js";
-import { McpStreamableHttpClient } from "../examples/rpc-task-console/mcp-streamable-http-client.js";
+import {
+	prepareChildSettings,
+	prewarmMcpMetadataCache,
+	readPrewarmedMcpDirectToolSpecs,
+} from "../examples/rpc-task-console/child-settings.js";
+import {
+	loadDemoEnv,
+	PI_MCP_ADAPTER_PACKAGE_SOURCE,
+	type RpcTaskConsoleEnv,
+} from "../examples/rpc-task-console/env.js";
 import { createPersistenceWriter } from "../examples/rpc-task-console/persistence.js";
 import { validatePlanSteps } from "../examples/rpc-task-console/plan-validation.js";
 import { buildTaskPrompt } from "../examples/rpc-task-console/prompt-builder.js";
@@ -20,8 +26,17 @@ import {
 } from "../examples/rpc-task-console/result-validation.js";
 import { RunManager } from "../examples/rpc-task-console/run-manager.js";
 import { DEFAULT_RUNTIME_CONFIG, loadRuntimeConfig } from "../examples/rpc-task-console/runtime-config.js";
-import { createRpcTaskConsoleServer } from "../examples/rpc-task-console/server.js";
-import { TaskDispatcher } from "../examples/rpc-task-console/task-dispatcher.js";
+import {
+	createRpcTaskConsoleServer,
+	formatRpcTaskConsoleListenMessage,
+	startRpcTaskConsoleServer,
+} from "../examples/rpc-task-console/server.js";
+import {
+	createMcpDirectToolsEnvValue,
+	MCP_DIRECT_TOOLS_ENV,
+	parseFutureMcpIdentity,
+	TaskDispatcher,
+} from "../examples/rpc-task-console/task-dispatcher.js";
 import { aggregateStepStatus, TaskStore } from "../examples/rpc-task-console/task-store.js";
 import { createInitialSteps, createRuntimeSteps } from "../examples/rpc-task-console/tasks.js";
 import type {
@@ -248,7 +263,18 @@ describe("rpc task console task prompt and result validation", () => {
 						tools: ["read", "grep"],
 						skills: ["openai-docs"],
 						card_type: "json",
-						data_structure: [{ field: "value", type: "string", required: true }],
+						data_structure: [
+							{ field: "address", type: "string", required: true },
+							{ field: "confirmed", type: "boolean", required: true },
+							{ field: "gbids", type: "array", required: true, items: { type: "string" } },
+							{ field: "unitCount", type: "integer", required: true },
+							{
+								field: "location",
+								type: "object",
+								required: true,
+								fields: [{ field: "label", type: "string", required: true }],
+							},
+						],
 					},
 				],
 			},
@@ -265,8 +291,15 @@ describe("rpc task console task prompt and result validation", () => {
 		expect(prompt).toContain("Do A");
 		expect(prompt).toContain("read, grep");
 		expect(prompt).toContain("openai-docs");
-		expect(prompt).toContain('{ "content": string, "data": ... }');
-		expect(prompt).toContain('"field": "value"');
+		expect(prompt).toContain('{ "content": string, "data": { ... } }');
+		expect(prompt).toContain("data 必须是 JSON object");
+		expect(prompt).toContain("key 必须来自 data_structure[].field");
+		expect(prompt).toContain(
+			'输出示例：{"content":"任务完成摘要","data":{"address":"示例文本","confirmed":true,"gbids":["示例文本"],"unitCount":1,"location":{"label":"示例文本"}}}',
+		);
+		expect(prompt).toContain("不要把 data 输出成 data_structure 数组");
+		expect(prompt).toContain("不要输出 field/type/required/description/value 包装对象");
+		expect(prompt).toContain('"field": "address"');
 		expect(prompt).toContain("不要输出 card title、card type，也不要输出完整 card object。");
 	});
 
@@ -393,7 +426,7 @@ describe("rpc task console runtime config", () => {
 });
 
 describe("rpc task console env", () => {
-	test("loads custom provider details from llm.config.json and injects MCP extension when configured", () => {
+	test("loads custom provider details and configures the fixed MCP package adapter", () => {
 		const dir = mkdtempSync(join(tmpdir(), "rpc-task-console-"));
 		try {
 			writeDefaultRuntimeConfigFile(dir);
@@ -402,7 +435,8 @@ describe("rpc task console env", () => {
 				[
 					"OPENAI_API_KEY=test-key",
 					"PI_DEMO_LLM_CONFIG=llm.config.json",
-					"PI_DEMO_MCP_CONFIG=mcp.config.json",
+					"PI_DEMO_MCP_CONFIG=.mcp.json",
+					"PI_DEMO_PI_MCP_CONFIG=.pi/mcp.json",
 					"PI_DEMO_PI_COMMAND=tsx",
 					"PI_DEMO_PORT=4555",
 				].join("\n"),
@@ -424,23 +458,32 @@ describe("rpc task console env", () => {
 				),
 			);
 			writeFileSync(
-				join(dir, "mcp.config.json"),
+				join(dir, ".mcp.json"),
 				JSON.stringify(
 					{
-						servers: {
+						mcpServers: {
 							caseTools: {
-								transport: "streamable-http",
 								url: "http://127.0.0.1:9001/mcp",
+								auth: false,
+								exposeResources: false,
 							},
 						},
-						tools: [
-							{
-								name: "jcj-get-case-detail",
-								server: "caseTools",
-								mcpTool: "jcj-get-case-detail",
-								description: "Get case detail",
-							},
-						],
+					},
+					null,
+					2,
+				),
+			);
+			mkdirSync(join(dir, ".pi"), { recursive: true });
+			writeFileSync(
+				join(dir, ".pi", "mcp.json"),
+				JSON.stringify(
+					{
+						settings: {
+							toolPrefix: "none",
+							directTools: true,
+							disableProxyTool: true,
+							sampling: false,
+						},
 					},
 					null,
 					2,
@@ -468,14 +511,53 @@ describe("rpc task console env", () => {
 				"rpc-demo",
 				"--model",
 				"model-b",
-				"--extension",
-				join(dir, "extensions", "mcp-tools.ts"),
+				"--mcp-config",
+				join(PROJECT_LOG_DIR, "pi-agent", "mcp.json"),
 			]);
-			expect(demoEnv.childEnv.PI_DEMO_MCP_CONFIG_PATH).toBe(join(dir, "mcp.config.json"));
+			expect(demoEnv.mcpConfigPath).toBe(join(dir, ".mcp.json"));
+			expect(demoEnv.piMcpConfigPath).toBe(join(dir, ".pi", "mcp.json"));
+			expect(demoEnv.childEnv.PI_DEMO_MCP_CONFIG_PATH).toBe(join(dir, ".mcp.json"));
+			expect(demoEnv.childEnv.PI_DEMO_PI_MCP_CONFIG_PATH).toBe(join(dir, ".pi", "mcp.json"));
+			expect(demoEnv.childEnv.PI_DEMO_CHILD_MCP_CONFIG_PATH).toBe(join(PROJECT_LOG_DIR, "pi-agent", "mcp.json"));
 			expect(demoEnv.outputDir).toBe(PROJECT_LOG_DIR);
 			expect(demoEnv.childEnv.PI_CODING_AGENT_DIR).toBe(join(PROJECT_LOG_DIR, "pi-agent"));
+			const childSettings = JSON.parse(readFileSync(demoEnv.childSettingsPath, "utf8")) as {
+				readonly packages: readonly string[];
+			};
+			const childMcpConfig = JSON.parse(readFileSync(join(PROJECT_LOG_DIR, "pi-agent", "mcp.json"), "utf8")) as {
+				readonly settings: { readonly directTools: boolean; readonly disableProxyTool: boolean };
+				readonly mcpServers: { readonly caseTools: { readonly url: string } };
+			};
+			expect(childSettings.packages).toContain(PI_MCP_ADAPTER_PACKAGE_SOURCE);
+			expect(childMcpConfig.settings.directTools).toBe(true);
+			expect(childMcpConfig.settings.disableProxyTool).toBe(true);
+			expect(childMcpConfig.mcpServers.caseTools.url).toBe("http://127.0.0.1:9001/mcp");
 			expect(modelsJson.providers["rpc-demo"].baseUrl).toBe("https://llm.example.test/v1");
 			expect(modelsJson.providers["rpc-demo"].models.map((model) => model.id)).toEqual(["model-a", "model-b"]);
+		} finally {
+			rmSync(dir, { recursive: true, force: true });
+		}
+	});
+
+	test("formats startup logs without assuming a localhost public address", () => {
+		const dir = mkdtempSync(join(tmpdir(), "rpc-task-console-"));
+		try {
+			writeDefaultRuntimeConfigFile(dir);
+			writeFileSync(
+				join(dir, ".env"),
+				["PI_DEMO_PORT=4555", "PI_DEMO_PUBLIC_URL=https://demo.example.test/tasks"].join("\n"),
+			);
+
+			const demoEnv = loadDemoEnv(dir, {});
+			const defaultEnv = loadDemoEnv(dir, { PI_DEMO_PUBLIC_URL: "" });
+
+			expect(demoEnv.publicUrl).toBe("https://demo.example.test/tasks");
+			expect(formatRpcTaskConsoleListenMessage(demoEnv)).toBe(
+				"RPC task console listening on https://demo.example.test/tasks",
+			);
+			expect(formatRpcTaskConsoleListenMessage({ ...defaultEnv, publicUrl: undefined })).toBe(
+				"RPC task console listening on port 4555",
+			);
 		} finally {
 			rmSync(dir, { recursive: true, force: true });
 		}
@@ -699,6 +781,7 @@ describe("rpc task console child settings", () => {
 					};
 				};
 				readonly transport: string;
+				readonly packages: readonly string[];
 			};
 
 			expect(paths.agentDir).toBe(join(PROJECT_LOG_DIR, "pi-agent"));
@@ -710,6 +793,7 @@ describe("rpc task console child settings", () => {
 			expect(settings.retry.provider.maxRetries).toBe(0);
 			expect(settings.retry.provider.maxRetryDelayMs).toBe(60000);
 			expect(settings.transport).toBe("sse");
+			expect(settings.packages).toEqual([PI_MCP_ADAPTER_PACKAGE_SOURCE]);
 		} finally {
 			rmSync(dir, { recursive: true, force: true });
 		}
@@ -780,274 +864,93 @@ describe("rpc task console persistence", () => {
 	});
 });
 
-describe("rpc task console MCP config", () => {
-	test("loads Streamable HTTP server URL and tool mappings from config", () => {
-		const dir = mkdtempSync(join(tmpdir(), "rpc-task-console-"));
-		try {
-			const configPath = join(dir, "mcp.config.json");
-			writeFileSync(
-				configPath,
-				JSON.stringify(
-					{
-						servers: {
-							caseTools: {
-								transport: "streamable-http",
-								url: "http://127.0.0.1:9001/mcp",
-								headers: { Authorization: "Bearer " + "$" + "{MCP_TOKEN}" },
-							},
-						},
-						tools: [
-							{
-								name: "panel-operate",
-								server: "caseTools",
-								mcpTool: "panel-operate",
-								description: "Operate panel",
-								parameters: { type: "object", properties: { action: { type: "string" } } },
-							},
-						],
-					},
-					null,
-					2,
-				),
-			);
-
-			const config = loadMcpConfig(configPath, { MCP_TOKEN: "secret-token" });
-
-			expect(config.servers.caseTools?.url).toBe("http://127.0.0.1:9001/mcp");
-			expect(config.servers.caseTools?.headers.Authorization).toBe("Bearer secret-token");
-			expect(config.tools[0]?.name).toBe("panel-operate");
-			expect(config.tools[0]?.mcpTool).toBe("panel-operate");
-		} finally {
-			rmSync(dir, { recursive: true, force: true });
-		}
-	});
-
-	test("filters MCP tools using the task-scoped allowlist env", () => {
-		const dir = mkdtempSync(join(tmpdir(), "rpc-task-console-"));
-		try {
-			const configPath = join(dir, "mcp.config.json");
-			writeFileSync(
-				configPath,
-				JSON.stringify(
-					{
-						servers: {
-							caseTools: {
-								transport: "streamable-http",
-								url: "http://127.0.0.1:9001/mcp",
-							},
-						},
-						tools: [
-							{
-								name: "panel-operate",
-								server: "caseTools",
-								mcpTool: "panel-operate",
-								description: "Operate panel",
-							},
-							{
-								name: "background-check",
-								server: "caseTools",
-								mcpTool: "background-check",
-								description: "Run background check",
-							},
-						],
-					},
-					null,
-					2,
-				),
-			);
-
-			const config = loadMcpConfig(configPath, {
-				PI_DEMO_TASK_ALLOWED_TOOLS: JSON.stringify(["panel-operate", "read"]),
-			});
-
-			expect(config.tools.map((tool) => tool.name)).toEqual(["panel-operate"]);
-		} finally {
-			rmSync(dir, { recursive: true, force: true });
-		}
-	});
-});
-
-describe("rpc task console MCP Streamable HTTP client", () => {
-	test("lists remote tools over Streamable HTTP", async () => {
+describe("rpc task console MCP package adapter", () => {
+	test("prewarms MCP metadata cache from standard config before child attempts", async () => {
 		const received: Array<{ readonly method: string; readonly sessionId?: string; readonly accept?: string }> = [];
 		const server = createServer((request, response) => {
 			void handleFakeMcpRequest(request, response, received, { mode: "json" });
 		});
 		const baseUrl = await listen(server);
+		const dir = mkdtempSync(join(tmpdir(), "rpc-task-console-"));
 		try {
-			const client = new McpStreamableHttpClient({
-				server: {
-					transport: "streamable-http",
-					url: `${baseUrl}/mcp`,
-					headers: {},
-				},
-			});
+			writeDefaultRuntimeConfigFile(dir);
+			writeFileSync(
+				join(dir, ".env"),
+				[
+					"PI_DEMO_OUTPUT_DIR=out",
+					"PI_DEMO_LLM_BASE_URL=http://localhost:9111/v1",
+					"PI_DEMO_LLM_MODEL=demo-model",
+					"PI_DEMO_MCP_CONFIG=.mcp.json",
+					"PI_DEMO_PI_MCP_CONFIG=.pi/mcp.json",
+				].join("\n"),
+			);
+			writeMcpPackageConfig(dir, `${baseUrl}/mcp`);
 
-			const tools = await client.listTools(undefined);
+			const demoEnv = loadDemoEnv(dir, {});
+			const result = await prewarmMcpMetadataCache(demoEnv.childEnv);
+			const specs = readPrewarmedMcpDirectToolSpecs(demoEnv.childEnv);
 
-			expect(tools.map((tool) => tool.name)).toEqual(["jcj-get-case-detail", "panel-operate"]);
-			expect(tools[0]?.inputSchema).toEqual({
-				type: "object",
-				properties: {
-					jjdbh: { type: "string" },
-				},
-				required: ["jjdbh"],
-			});
+			if (!result) {
+				throw new Error("Expected MCP prewarm result");
+			}
+			expect(result.servers).toEqual(["caseTools"]);
+			expect(result.toolNames).toEqual(["jcj-get-case-detail", "panel-operate", "background-check"]);
+			expect(specs.map((spec) => spec.name)).toEqual(["jcj-get-case-detail", "panel-operate", "background-check"]);
+			expect(createMcpDirectToolsEnvValue(["panel-operate", "read"], specs)).toBe("caseTools/panel-operate");
 			expect(received.map((item) => item.method)).toEqual(["initialize", "notifications/initialized", "tools/list"]);
 		} finally {
 			await closeServer(server);
+			rmSync(dir, { recursive: true, force: true });
 		}
 	});
 
-	test("initializes and calls tools over Streamable HTTP", async () => {
-		const received: Array<{ readonly method: string; readonly sessionId?: string; readonly accept?: string }> = [];
-		const server = createServer((request, response) => {
-			void handleFakeMcpRequest(request, response, received, { mode: "json" });
-		});
-		const baseUrl = await listen(server);
+	test("fails MCP prewarm with a clear connection error", async () => {
+		const dir = mkdtempSync(join(tmpdir(), "rpc-task-console-"));
 		try {
-			const client = new McpStreamableHttpClient({
-				server: {
-					transport: "streamable-http",
-					url: `${baseUrl}/mcp`,
-					headers: {},
-				},
-			});
-
-			const result = await client.callTool("echo", { text: "hello" }, undefined);
-
-			expect(result.content[0]).toEqual({ type: "text", text: "called echo" });
-			expect(result.structuredContent).toEqual({
-				tool: "echo",
-				echoedArguments: { text: "hello" },
-			});
-			expect(received).toEqual([
-				{ method: "initialize", sessionId: undefined, accept: "application/json, text/event-stream" },
-				{
-					method: "notifications/initialized",
-					sessionId: "session-1",
-					accept: "application/json, text/event-stream",
-				},
-				{ method: "tools/call", sessionId: "session-1", accept: "application/json, text/event-stream" },
-			]);
-		} finally {
-			await closeServer(server);
-		}
-	});
-
-	test("passes case detail arguments using the remote MCP schema shape", async () => {
-		const server = createServer((request, response) => {
-			void handleFakeMcpRequest(request, response, [], { mode: "json" });
-		});
-		const baseUrl = await listen(server);
-		try {
-			const client = new McpStreamableHttpClient({
-				server: {
-					transport: "streamable-http",
-					url: `${baseUrl}/mcp`,
-					headers: {},
-				},
-			});
-
-			const result = await client.callTool("jcj-get-case-detail", { jjdbh: "JJDBH-1" }, undefined);
-
-			expect(result.structuredContent).toEqual({
-				tool: "jcj-get-case-detail",
-				echoedArguments: { jjdbh: "JJDBH-1" },
-			});
-		} finally {
-			await closeServer(server);
-		}
-	});
-
-	test("reads a tools/call result from a Streamable HTTP SSE response", async () => {
-		const received: Array<{ readonly method: string; readonly sessionId?: string; readonly accept?: string }> = [];
-		const server = createServer((request, response) => {
-			void handleFakeMcpRequest(request, response, received, { mode: "sse" });
-		});
-		const baseUrl = await listen(server);
-		try {
-			const client = new McpStreamableHttpClient({
-				server: {
-					transport: "streamable-http",
-					url: `${baseUrl}/mcp`,
-					headers: {},
-				},
-			});
-
-			const result = await client.callTool("echo", { text: "hello" }, undefined);
-
-			expect(result.content[0]).toEqual({ type: "text", text: "called echo" });
-			expect(result.structuredContent).toEqual({
-				tool: "echo",
-				echoedArguments: { text: "hello" },
-			});
-			expect(received.map((item) => item.method)).toEqual(["initialize", "notifications/initialized", "tools/call"]);
-		} finally {
-			await closeServer(server);
-		}
-	});
-
-	test("surfaces HTTP failures as tool errors instead of crashing", async () => {
-		const server = createServer((request, response) => {
-			void handleFakeMcpRequest(request, response, [], { mode: "http-error" });
-		});
-		const baseUrl = await listen(server);
-		try {
-			const client = new McpStreamableHttpClient({
-				server: {
-					transport: "streamable-http",
-					url: `${baseUrl}/mcp`,
-					headers: {},
-				},
-			});
-
-			await expect(client.callTool("echo", { text: "hello" }, undefined)).rejects.toThrow(/tool "echo".*HTTP 502/i);
-		} finally {
-			await closeServer(server);
-		}
-	});
-
-	test("surfaces JSON-RPC failures as tool errors instead of crashing", async () => {
-		const server = createServer((request, response) => {
-			void handleFakeMcpRequest(request, response, [], { mode: "jsonrpc-error" });
-		});
-		const baseUrl = await listen(server);
-		try {
-			const client = new McpStreamableHttpClient({
-				server: {
-					transport: "streamable-http",
-					url: `${baseUrl}/mcp`,
-					headers: {},
-				},
-			});
-
-			await expect(client.callTool("echo", { text: "hello" }, undefined)).rejects.toThrow(
-				/tool "echo".*JSON-RPC.*tool exploded/i,
+			writeDefaultRuntimeConfigFile(dir);
+			writeFileSync(
+				join(dir, ".env"),
+				[
+					"PI_DEMO_OUTPUT_DIR=out",
+					"PI_DEMO_LLM_BASE_URL=http://localhost:9111/v1",
+					"PI_DEMO_LLM_MODEL=demo-model",
+					"PI_DEMO_MCP_CONFIG=.mcp.json",
+				].join("\n"),
 			);
+			writeMcpPackageConfig(dir, "http://127.0.0.1:9/mcp");
+
+			const demoEnv = loadDemoEnv(dir, {});
+			await expect(prewarmMcpMetadataCache(demoEnv.childEnv)).rejects.toThrow(/MCP prewarm failed|fetch failed/i);
 		} finally {
-			await closeServer(server);
+			rmSync(dir, { recursive: true, force: true });
 		}
 	});
 
-	test("surfaces protocol mismatch responses as tool errors instead of crashing", async () => {
-		const server = createServer((request, response) => {
-			void handleFakeMcpRequest(request, response, [], { mode: "protocol-mismatch" });
-		});
-		const baseUrl = await listen(server);
-		try {
-			const client = new McpStreamableHttpClient({
-				server: {
-					transport: "streamable-http",
-					url: `${baseUrl}/mcp`,
-					headers: {},
-				},
-			});
+	test("keeps current POC on bare tool names and reserves future server-qualified identities", () => {
+		const specs = [
+			{
+				name: "panel-operate",
+				server: "caseTools",
+				mcpTool: "panel-operate",
+				adapterSpec: "caseTools/panel-operate",
+			},
+			{
+				name: "background-check",
+				server: "caseTools",
+				mcpTool: "background-check",
+				adapterSpec: "caseTools/background-check",
+			},
+		];
 
-			await expect(client.callTool("echo", { text: "hello" }, undefined)).rejects.toThrow(/tool "echo".*protocol/i);
-		} finally {
-			await closeServer(server);
-		}
+		expect(createMcpDirectToolsEnvValue(["panel-operate"], specs)).toBe("caseTools/panel-operate");
+		expect(createMcpDirectToolsEnvValue(["background-check", "panel-operate"], specs)).toBe(
+			"caseTools/background-check,caseTools/panel-operate",
+		);
+		expect(parseFutureMcpIdentity("$mcp_caseTools:panel-operate")).toEqual({
+			server: "caseTools",
+			tool: "panel-operate",
+		});
+		expect(createMcpDirectToolsEnvValue(["$mcp_caseTools:panel-operate"], specs)).toBe("caseTools/panel-operate");
 	});
 });
 
@@ -1773,6 +1676,117 @@ describe("rpc task console TaskDispatcher", () => {
 		expect(store.getSnapshot().run.steps[1]?.tasks[0]?.attempts).toEqual([]);
 	});
 
+	test("lets active and queued sibling tasks converge after a concurrent task finally fails", async () => {
+		const plan: PlanStep[] = [
+			{
+				id: "step-one",
+				title: "第一步",
+				tasks: [
+					{
+						id: "task-fails",
+						title: "失败任务",
+						description: "fail",
+						tools: [],
+						skills: [],
+						retry: { max_attempts: 1, base_delay_ms: 0, retry_on: [] },
+					},
+					{ id: "task-running", title: "运行任务", description: "running", tools: [], skills: [] },
+					{ id: "task-queued", title: "排队任务", description: "queued", tools: [], skills: [] },
+				],
+			},
+			{
+				id: "step-two",
+				title: "第二步",
+				tasks: [{ id: "task-next-step", title: "后续任务", description: "pending", tools: [], skills: [] }],
+			},
+		];
+		const children: FakeChildAgentProcess[] = [];
+		const startedTaskIds: string[] = [];
+		const store = TaskStore.createIdle(plan);
+		const run = store.startRun("run-1", "demo", 100);
+		const dispatcher = new TaskDispatcher({
+			runId: run.id,
+			userInstruction: run.userInstruction,
+			steps: plan,
+			store,
+			childFactory: (options) => {
+				const child = new FakeChildAgentProcess(options, startedTaskIds, {
+					onPrompt: (runningChild) => {
+						if (options.taskId === "task-fails") {
+							queueMicrotask(() => {
+								runningChild.emit({ type: "prompt_response_failure", error: "final failure" });
+							});
+						}
+						if (options.taskId === "task-running") {
+							queueMicrotask(() => {
+								runningChild.emit({
+									type: "message_end",
+									message: createAssistantMessage(JSON.stringify({ content: "sibling completed" })),
+								});
+								runningChild.emit({ type: "agent_end", messages: [], willRetry: false });
+							});
+						}
+						if (options.taskId === "task-queued") {
+							queueMicrotask(() => {
+								runningChild.emit({ type: "prompt_response_failure", error: "queued sibling failure" });
+							});
+						}
+					},
+					onKill: (runningChild) => {
+						queueMicrotask(() => {
+							runningChild.emit({
+								type: "process_close",
+								exitCode: 143,
+								signal: "SIGTERM",
+								stderrTail: `${options.taskId} stopped`,
+							});
+						});
+					},
+				});
+				children.push(child);
+				return child;
+			},
+			command: "pi",
+			args: ["--mode", "rpc", "--no-session"],
+			env: process.env,
+			runtimeConfig: {
+				...DEFAULT_RUNTIME_CONFIG,
+				concurrency_limit: 2,
+				stop_steer_timeout_ms: 0,
+				stop_abort_timeout_ms: 0,
+			},
+			now: createClock(101),
+		});
+
+		await dispatcher.run();
+
+		const snapshot = store.getSnapshot();
+		const step = snapshot.run.steps[0];
+		const failedTask = step?.tasks.find((task) => task.id === "task-fails");
+		const runningSibling = step?.tasks.find((task) => task.id === "task-running");
+		const queuedSibling = step?.tasks.find((task) => task.id === "task-queued");
+		const allAttempts = snapshot.run.steps.flatMap((runtimeStep) =>
+			runtimeStep.tasks.flatMap((task) => task.attempts),
+		);
+
+		expect(startedTaskIds.sort()).toEqual(["task-fails", "task-queued", "task-running"]);
+		expect(snapshot.run.status).toBe("fail");
+		expect(step?.status).toBe("fail");
+		expect(failedTask?.status).toBe("fail");
+		expect(runningSibling?.status).toBe("complete");
+		expect(runningSibling?.stopped).toBeUndefined();
+		expect(runningSibling?.attempts[0]?.status).toBe("complete");
+		expect(queuedSibling?.status).toBe("fail");
+		expect(queuedSibling?.stopped).toBeUndefined();
+		expect(queuedSibling?.attempts[0]?.status).toBe("fail");
+		expect(snapshot.run.steps[1]?.status).toBe("loading");
+		expect(snapshot.run.steps[1]?.tasks[0]?.attempts).toEqual([]);
+		expect(
+			snapshot.run.steps.flatMap((runtimeStep) => runtimeStep.tasks).some((task) => task.status === "running"),
+		).toBe(false);
+		expect(allAttempts.some((attempt) => attempt.status === "running")).toBe(false);
+	});
+
 	test("stops active child agents and marks running tasks stopped", async () => {
 		const plan: PlanStep[] = [
 			{
@@ -2413,6 +2427,88 @@ describe("rpc task console TaskDispatcher", () => {
 		expect(store.getSnapshot().run.steps[0]?.tasks[0]?.error?.code).toBe("validation_error");
 	});
 
+	test("does not log validation_error for assistant tool-call message_end before final text result", async () => {
+		const plan: PlanStep[] = [
+			{
+				id: "step-test",
+				title: "测试步骤",
+				tasks: [{ id: "task-test", title: "测试任务", description: "pending", tools: ["read"], skills: [] }],
+			},
+		];
+		const store = TaskStore.createIdle(plan);
+		const run = store.startRun("run-1", "demo", 100);
+		const dispatcher = new TaskDispatcher({
+			runId: run.id,
+			userInstruction: run.userInstruction,
+			steps: plan,
+			store,
+			childFactory: (options) =>
+				new FakeChildAgentProcess(options, [], {
+					onPrompt: (child) => {
+						queueMicrotask(() => {
+							child.emit({ type: "message_end", message: createAssistantToolCallMessage() });
+							child.emit({
+								type: "message_end",
+								message: createAssistantMessage(JSON.stringify({ content: "done" })),
+							});
+							child.emit({ type: "agent_end", messages: [], willRetry: false });
+						});
+					},
+				}),
+			command: "pi",
+			args: ["--mode", "rpc", "--no-session"],
+			env: process.env,
+			runtimeConfig: DEFAULT_RUNTIME_CONFIG,
+			now: createClock(101),
+		});
+
+		await dispatcher.run();
+
+		const snapshot = store.getSnapshot();
+		expect(snapshot.run.steps[0]?.tasks[0]?.status).toBe("complete");
+		expect(snapshot.logs.some((log) => log.taskId === "task-test" && log.type === "message_end")).toBe(true);
+		expect(snapshot.logs.some((log) => log.taskId === "task-test" && log.type === "validation_error")).toBe(false);
+	});
+
+	test("fails with validation_error when assistant only emits tool-call message_end before agent_end", async () => {
+		const plan: PlanStep[] = [
+			{
+				id: "step-test",
+				title: "测试步骤",
+				tasks: [{ id: "task-test", title: "测试任务", description: "pending", tools: ["read"], skills: [] }],
+			},
+		];
+		const store = TaskStore.createIdle(plan);
+		const run = store.startRun("run-1", "demo", 100);
+		const dispatcher = new TaskDispatcher({
+			runId: run.id,
+			userInstruction: run.userInstruction,
+			steps: plan,
+			store,
+			childFactory: (options) =>
+				new FakeChildAgentProcess(options, [], {
+					onPrompt: (child) => {
+						queueMicrotask(() => {
+							child.emit({ type: "message_end", message: createAssistantToolCallMessage() });
+							child.emit({ type: "agent_end", messages: [], willRetry: false });
+						});
+					},
+				}),
+			command: "pi",
+			args: ["--mode", "rpc", "--no-session"],
+			env: process.env,
+			runtimeConfig: DEFAULT_RUNTIME_CONFIG,
+			now: createClock(101),
+		});
+
+		await dispatcher.run();
+
+		const task = store.getSnapshot().run.steps[0]?.tasks[0];
+		expect(task?.status).toBe("fail");
+		expect(task?.error?.code).toBe("validation_error");
+		expect(task?.error?.message).toBe("agent_end 前没有得到合法的最终 task 结果。");
+	});
+
 	test("fails with process_closed_before_agent_end when the child exits before a valid result is available", async () => {
 		const plan: PlanStep[] = [
 			{
@@ -2449,77 +2545,121 @@ describe("rpc task console TaskDispatcher", () => {
 	});
 
 	test("passes a task-scoped --tools allowlist and MCP allowlist env to each child", async () => {
+		const server = createServer((request, response) => {
+			void handleFakeMcpRequest(request, response, [], { mode: "json" });
+		});
+		const baseUrl = await listen(server);
+		const dir = mkdtempSync(join(tmpdir(), "rpc-task-console-"));
+		try {
+			const childMcpConfigPath = join(dir, "mcp.json");
+			const mcpCachePath = join(dir, "mcp-cache.json");
+			writeMcpPackageConfig(dir, `${baseUrl}/mcp`, "mcp.json");
+			const plan: PlanStep[] = [
+				{
+					id: "step-test",
+					title: "测试步骤",
+					tasks: [
+						{
+							id: "task-a",
+							title: "任务 A",
+							description: "pending",
+							tools: ["panel-operate", "read"],
+							skills: [],
+						},
+						{
+							id: "task-b",
+							title: "任务 B",
+							description: "pending",
+							tools: ["background-check"],
+							skills: [],
+						},
+					],
+				},
+			];
+			const store = TaskStore.createIdle(plan);
+			const run = store.startRun("run-1", "demo", 100);
+			const launches: ChildAgentProcessFactoryOptions[] = [];
+			const env = {
+				...process.env,
+				PI_DEMO_CHILD_MCP_CONFIG_PATH: childMcpConfigPath,
+				PI_DEMO_MCP_CACHE_PATH: mcpCachePath,
+			};
+			await prewarmMcpMetadataCache(env);
+			const dispatcher = new TaskDispatcher({
+				runId: run.id,
+				userInstruction: run.userInstruction,
+				steps: plan,
+				store,
+				childFactory: (options) => {
+					launches.push(options);
+					return new FakeChildAgentProcess(options, [], {
+						onPrompt: (child) => {
+							queueMicrotask(() => {
+								child.emit({
+									type: "message_end",
+									message: createAssistantMessage(JSON.stringify({ content: `${options.taskId} done` })),
+								});
+								child.emit({ type: "agent_end", messages: [], willRetry: false });
+								child.emit({
+									type: "process_close",
+									exitCode: 0,
+									signal: null,
+									stderrTail: `${options.taskId} stderr`,
+								});
+							});
+						},
+					});
+				},
+				command: "pi",
+				args: ["--mode", "rpc", "--no-session"],
+				env,
+				runtimeConfig: {
+					...DEFAULT_RUNTIME_CONFIG,
+					concurrency_limit: 1,
+					minimal_system_tools: ["ls", "read"],
+				},
+				now: createClock(100),
+			});
+
+			await dispatcher.run();
+
+			expect(launches).toHaveLength(2);
+			expect(launches[0]?.args).toEqual(["--mode", "rpc", "--no-session", "--tools", "panel-operate,read,ls"]);
+			expect(launches[0]?.env.PI_DEMO_TASK_ALLOWED_TOOLS).toBe(JSON.stringify(["panel-operate", "read", "ls"]));
+			expect(launches[0]?.env[MCP_DIRECT_TOOLS_ENV]).toBe("caseTools/panel-operate");
+			expect(launches[1]?.args).toEqual(["--mode", "rpc", "--no-session", "--tools", "background-check,ls,read"]);
+			expect(launches[1]?.env.PI_DEMO_TASK_ALLOWED_TOOLS).toBe(JSON.stringify(["background-check", "ls", "read"]));
+			expect(launches[1]?.env[MCP_DIRECT_TOOLS_ENV]).toBe("caseTools/background-check");
+		} finally {
+			await closeServer(server);
+			rmSync(dir, { recursive: true, force: true });
+		}
+	});
+
+	test("rejects the MCP proxy tool in task allowlists", async () => {
 		const plan: PlanStep[] = [
 			{
 				id: "step-test",
 				title: "测试步骤",
-				tasks: [
-					{
-						id: "task-a",
-						title: "任务 A",
-						description: "pending",
-						tools: ["panel-operate", "read"],
-						skills: [],
-					},
-					{
-						id: "task-b",
-						title: "任务 B",
-						description: "pending",
-						tools: ["background-check"],
-						skills: [],
-					},
-				],
+				tasks: [{ id: "task-a", title: "任务 A", description: "pending", tools: ["mcp"], skills: [] }],
 			},
 		];
 		const store = TaskStore.createIdle(plan);
 		const run = store.startRun("run-1", "demo", 100);
-		const launches: ChildAgentProcessFactoryOptions[] = [];
 		const dispatcher = new TaskDispatcher({
 			runId: run.id,
 			userInstruction: run.userInstruction,
 			steps: plan,
 			store,
-			childFactory: (options) => {
-				launches.push(options);
-				return new FakeChildAgentProcess(options, [], {
-					onPrompt: (child) => {
-						queueMicrotask(() => {
-							child.emit({
-								type: "message_end",
-								message: createAssistantMessage(JSON.stringify({ content: `${options.taskId} done` })),
-							});
-							child.emit({ type: "agent_end", messages: [], willRetry: false });
-							child.emit({
-								type: "process_close",
-								exitCode: 0,
-								signal: null,
-								stderrTail: `${options.taskId} stderr`,
-							});
-						});
-					},
-				});
-			},
+			childFactory: (options) => new FakeChildAgentProcess(options, []),
 			command: "pi",
 			args: ["--mode", "rpc", "--no-session"],
-			env: {
-				...process.env,
-				PI_DEMO_MCP_CONFIG_PATH: "/tmp/mcp.config.json",
-			},
-			runtimeConfig: {
-				...DEFAULT_RUNTIME_CONFIG,
-				concurrency_limit: 1,
-				minimal_system_tools: ["ls", "read"],
-			},
+			env: process.env,
+			runtimeConfig: DEFAULT_RUNTIME_CONFIG,
 			now: createClock(100),
 		});
 
-		await dispatcher.run();
-
-		expect(launches).toHaveLength(2);
-		expect(launches[0]?.args).toEqual(["--mode", "rpc", "--no-session", "--tools", "panel-operate,read,ls"]);
-		expect(launches[0]?.env.PI_DEMO_TASK_ALLOWED_TOOLS).toBe(JSON.stringify(["panel-operate", "read", "ls"]));
-		expect(launches[1]?.args).toEqual(["--mode", "rpc", "--no-session", "--tools", "background-check,ls,read"]);
-		expect(launches[1]?.env.PI_DEMO_TASK_ALLOWED_TOOLS).toBe(JSON.stringify(["background-check", "ls", "read"]));
+		await expect(dispatcher.run()).rejects.toThrow(/must not allow.*mcp/i);
 	});
 });
 
@@ -2543,6 +2683,48 @@ function createImmediateAgentFactory(startedTaskIds: string[]) {
 	};
 }
 
+function writeMcpPackageConfig(dir: string, url: string, fileName = ".mcp.json"): void {
+	mkdirSync(join(dir, ".pi"), { recursive: true });
+	writeFileSync(
+		join(dir, fileName),
+		JSON.stringify(
+			{
+				settings: {
+					toolPrefix: "none",
+					directTools: true,
+					disableProxyTool: true,
+					sampling: false,
+				},
+				mcpServers: {
+					caseTools: {
+						url,
+						auth: false,
+						lifecycle: "lazy",
+						exposeResources: false,
+					},
+				},
+			},
+			null,
+			2,
+		),
+	);
+	writeFileSync(
+		join(dir, ".pi", "mcp.json"),
+		JSON.stringify(
+			{
+				settings: {
+					toolPrefix: "none",
+					directTools: true,
+					disableProxyTool: true,
+					sampling: false,
+				},
+			},
+			null,
+			2,
+		),
+	);
+}
+
 function createAssistantMessage(text: string) {
 	return {
 		role: "assistant" as const,
@@ -2559,6 +2741,26 @@ function createAssistantMessage(text: string) {
 			cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
 		},
 		stopReason: "stop" as const,
+		timestamp: Date.now(),
+	};
+}
+
+function createAssistantToolCallMessage() {
+	return {
+		role: "assistant" as const,
+		content: [{ type: "toolCall" as const, id: "call-1", name: "read", arguments: { path: "README.md" } }],
+		api: "openai-responses" as const,
+		provider: "openai" as const,
+		model: "mock",
+		usage: {
+			input: 0,
+			output: 0,
+			cacheRead: 0,
+			cacheWrite: 0,
+			totalTokens: 0,
+			cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+		},
+		stopReason: "toolUse" as const,
 		timestamp: Date.now(),
 	};
 }
@@ -3600,6 +3802,77 @@ describe("rpc task console frontend static contracts", () => {
 });
 
 describe("rpc task console HTTP API", () => {
+	test("prewarms MCP metadata before listening and does not reconnect for each run", async () => {
+		const received: Array<{ readonly method: string; readonly sessionId?: string; readonly accept?: string }> = [];
+		const mcpServer = createServer((request, response) => {
+			void handleFakeMcpRequest(request, response, received, { mode: "json" });
+		});
+		const mcpBaseUrl = await listen(mcpServer);
+		const dir = mkdtempSync(join(tmpdir(), "rpc-task-console-startup-mcp-"));
+		let server: Server | undefined;
+		try {
+			writeDefaultRuntimeConfigFile(dir);
+			writeFileSync(
+				join(dir, ".env"),
+				[
+					"PI_DEMO_OUTPUT_DIR=out",
+					"PI_DEMO_LLM_BASE_URL=http://localhost:9111/v1",
+					"PI_DEMO_LLM_MODEL=demo-model",
+					"PI_DEMO_MCP_CONFIG=.mcp.json",
+				].join("\n"),
+			);
+			writeMcpPackageConfig(dir, `${mcpBaseUrl}/mcp`);
+			const demoEnv = { ...loadDemoEnv(dir, {}), port: 0 };
+			const manager = new RunManager({
+				demoEnv,
+				childFactory: createImmediateAgentFactory([]),
+				now: createClock(100),
+			});
+
+			server = await startRpcTaskConsoleServer(demoEnv, { runManager: manager });
+
+			expect(received.map((item) => item.method)).toEqual(["initialize", "notifications/initialized", "tools/list"]);
+			const requestCountAfterStartup = received.length;
+			const runResponse = await fetch(`${getServerBaseUrl(server)}/runs/start`, {
+				method: "POST",
+				headers: { "content-type": "application/json" },
+				body: JSON.stringify({ steps: createInitialSteps(), userInstruction: "demo" }),
+			});
+			expect(runResponse.status).toBe(202);
+
+			await manager.waitForIdle();
+			expect(received).toHaveLength(requestCountAfterStartup);
+		} finally {
+			if (server) {
+				await closeServer(server);
+			}
+			await closeServer(mcpServer);
+			rmSync(dir, { recursive: true, force: true });
+		}
+	});
+
+	test("rejects startup before /runs/start can return 202 when MCP prewarm fails", async () => {
+		const dir = mkdtempSync(join(tmpdir(), "rpc-task-console-startup-mcp-fail-"));
+		try {
+			writeDefaultRuntimeConfigFile(dir);
+			writeFileSync(
+				join(dir, ".env"),
+				[
+					"PI_DEMO_OUTPUT_DIR=out",
+					"PI_DEMO_LLM_BASE_URL=http://localhost:9111/v1",
+					"PI_DEMO_LLM_MODEL=demo-model",
+					"PI_DEMO_MCP_CONFIG=.mcp.json",
+				].join("\n"),
+			);
+			writeMcpPackageConfig(dir, "http://127.0.0.1:9/mcp");
+			const demoEnv = { ...loadDemoEnv(dir, {}), port: 0 };
+
+			await expect(startRpcTaskConsoleServer(demoEnv)).rejects.toThrow(/MCP prewarm failed|fetch failed/i);
+		} finally {
+			rmSync(dir, { recursive: true, force: true });
+		}
+	});
+
 	test("serves canonical shell routes and starts runs through canonical runtime routes", async () => {
 		const manager = new RunManager({
 			demoEnv: createDemoEnv(),
@@ -4031,6 +4304,14 @@ async function handleFakeMcpRequest(
 							additionalProperties: true,
 						},
 					},
+					{
+						name: "background-check",
+						description: "Run background check",
+						inputSchema: {
+							type: "object",
+							additionalProperties: true,
+						},
+					},
 				],
 			},
 		};
@@ -4081,11 +4362,16 @@ function readFakeMcpToolName(value: unknown): unknown {
 async function listen(server: Server): Promise<string> {
 	server.listen(0, "127.0.0.1");
 	await once(server, "listening");
+	return getServerBaseUrl(server);
+}
+
+function getServerBaseUrl(server: Server): string {
 	const address = server.address();
 	if (!isAddressInfo(address)) {
 		throw new Error("Server did not expose a TCP address");
 	}
-	return `http://${address.address}:${address.port}`;
+	const host = address.family === "IPv6" ? `[${address.address}]` : address.address;
+	return `http://${host}:${address.port}`;
 }
 
 async function closeServer(server: Server): Promise<void> {

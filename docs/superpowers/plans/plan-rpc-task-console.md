@@ -754,7 +754,7 @@ npx tsx ../../node_modules/vitest/dist/cli.js --run test/rpc-task-console.test.t
 
 **目标：** 按当前 spec 将 MCP 接入层迁移到 `pi-mcp-adapter@2.8.0` package，同时保留 Task Console subprocess RPC runtime 和 task `tools` allowlist 语义。
 
-**状态：** 未完成。
+**状态：** 已完成。
 
 **文件：**
 
@@ -772,7 +772,7 @@ npx tsx ../../node_modules/vitest/dist/cli.js --run test/rpc-task-console.test.t
 - 退出 active path：`packages/coding-agent/examples/rpc-task-console/mcp-streamable-http-client.ts`
 - 退出 active path：`packages/coding-agent/examples/rpc-task-console/extensions/mcp-tools.ts`
 
-- [ ] **Step 1: 固定 package 版本和加载方式**
+- [x] **Step 1: 固定 package 版本和加载方式**
 
 要求：
 
@@ -781,7 +781,7 @@ npx tsx ../../node_modules/vitest/dist/cli.js --run test/rpc-task-console.test.t
 - 不得让每个 task attempt 通过 `--extension npm:pi-mcp-adapter` 临时安装。
 - 保留第一版 subprocess RPC runtime；不得把本任务扩大为 `AgentSession` / SDK 嵌入式迁移。
 
-- [ ] **Step 2: 迁移配置入口**
+- [x] **Step 2: 迁移配置入口**
 
 要求：
 
@@ -791,7 +791,7 @@ npx tsx ../../node_modules/vitest/dist/cli.js --run test/rpc-task-console.test.t
 - `PI_DEMO_PI_MCP_CONFIG` 指向 Pi adapter 专属配置，或启动时同步到 child agent dir。
 - 配置中必须表达允许暴露的 remote MCP tools；不得依赖手写 tool schema 作为默认 schema 来源。
 
-- [ ] **Step 3: 强制 directTools 并禁用 proxy mcp**
+- [x] **Step 3: 强制 directTools 并禁用 proxy mcp**
 
 要求：
 
@@ -801,7 +801,7 @@ npx tsx ../../node_modules/vitest/dist/cli.js --run test/rpc-task-console.test.t
 - 当前 POC 可以暂用无前缀 tool name 以兼容现有公安 workflow。
 - 长期 tool identity 必须保留 MCP server name/id 前缀方案，建议格式为 `$mcp_server_name:tool_name`；后续 task `tools` 字段应按该格式设计。
 
-- [ ] **Step 4: 保留多层 allowlist**
+- [x] **Step 4: 保留多层 allowlist**
 
 要求：
 
@@ -810,7 +810,7 @@ npx tsx ../../node_modules/vitest/dist/cli.js --run test/rpc-task-console.test.t
 - Adapter/package 层必须保留第二道限制，避免 proxy fallback 或额外 direct tools 绕过 task allowlist。
 - 若 adapter/package 无法表达第二道限制，必须记录阻塞并回到 spec/plan 重新决策，不得放宽 task allowlist 语义。
 
-- [ ] **Step 5: 实现 metadata cache prewarm**
+- [x] **Step 5: 实现 metadata cache prewarm**
 
 要求：
 
@@ -819,7 +819,7 @@ npx tsx ../../node_modules/vitest/dist/cli.js --run test/rpc-task-console.test.t
 - prewarm 失败时，server 启动必须失败并输出明确配置/连接错误。
 - 不得等到 child agent 执行过程中才发现 direct tools 未注册。
 
-- [ ] **Step 6: 让 demo adapter 退出 active path**
+- [x] **Step 6: 让 demo adapter 退出 active path**
 
 要求：
 
@@ -827,7 +827,7 @@ npx tsx ../../node_modules/vitest/dist/cli.js --run test/rpc-task-console.test.t
 - 是否删除这些文件由实现风险决定；若保留，必须确保测试和 runtime 不再依赖其 active path。
 - 不得删除与 Task Console runtime、dispatcher、TaskStore、SSE、cards、stop/replace、retry、持久化和结果校验相关的功能。
 
-- [ ] **Step 7: 更新测试**
+- [x] **Step 7: 更新测试**
 
 测试至少覆盖：
 
@@ -842,7 +842,7 @@ npx tsx ../../node_modules/vitest/dist/cli.js --run test/rpc-task-console.test.t
 - 当前 POC 裸 tool name 兼容公安 workflow。
 - 长期 `$mcp_server_name:tool_name` tool identity 策略有配置或校验占位，不被当前 POC 实现反向阻断。
 
-- [ ] **Step 8: 运行验证**
+- [x] **Step 8: 运行验证**
 
 运行：
 
@@ -1148,7 +1148,7 @@ npx tsx ../../node_modules/vitest/dist/cli.js --run test/rpc-task-console.test.t
 npm run check
 ```
 
-- [ ] **Step 5: Task 7 后 MCP 集成前置检查**
+- [x] **Step 5: Task 7 后 MCP 集成前置检查**
 
 必须确认：
 
@@ -1160,7 +1160,21 @@ npm run check
 - 当前 demo adapter 文件 `mcp-config.ts`、`mcp-streamable-http-client.ts`、`extensions/mcp-tools.ts` 已退出 active path。
 - task `tools` allowlist 仍通过 Pi CLI / AgentSession 主防线和 adapter/package 第二道限制生效。
 
-- [ ] **Step 6: demo server 和真实公安 workflow 验收**
+- [x] **Step 6: 修正当前 step 内失败收敛语义**
+
+要求：
+
+- 当前 step 内 tasks 必须保持独立并行语义。
+- 任一 task attempts 用尽最终 fail 后，后续 step 不启动。
+- 不得因为 sibling task 最终 fail，就把当前 step 内已启动或排队的其他 task 标记为 `stopped`。
+- `stopped` 仍只表示用户停止或新指令替换导致的停止，不新增 `step_failed` stop reason。
+- 当前 step 内已启动或排队的 sibling task 应继续按自身 attempt/retry 语义收敛到 `complete` 或 `fail`。
+- 最终 snapshot 不得残留 `running` task 或 `running` attempt。
+- 保留旧 run、旧子进程、已终态 task 的迟到事件保护和诊断日志。
+- 补充回归测试覆盖：同一 step 并发启动多个 task，其中一个 task 最终 fail，其他 sibling 继续独立完成或失败；后续 step 不启动；最终 run/step 为 `fail` 且无 `running` task/attempt。
+- 移除 Huygens 方向引入的 `step_failed` stop reason、主动停止 sibling、以及允许 terminal run 后用 `step_failed` stopped 改写非终态 task 的逻辑。
+
+- [x] **Step 7: demo server 和真实公安 workflow 验收**
 
 启动 demo server：
 
@@ -1201,7 +1215,28 @@ node docs/superpowers/plans/run-police-workflow.mjs
 - 配置 `card_type` 的 task 成功创建 card。
 - 未配置 `card_type` 的 task 不创建 card。
 
-- [ ] **Step 7: runtime 控制、持久化和浏览器人工验收**
+- [x] **Step 8: 修复真实 workflow 结构化输出稳定性缺口**
+
+要求：
+
+- 子 agent prompt 必须明确说明 `data` 是以 `data_structure[].field` 为 key 的 JSON object，不是 `data_structure` 数组、schema 描述数组或完整 card object。
+- 对配置了 `card_type` 的 task，prompt 必须给出紧凑输出示例，例如 `{ "content": "...", "data": { "<field>": <value> } }`。
+- 保持 result validation 严格；不得为了通过 demo 接受 schema 描述数组、缺少 `content` 的对象或不满足 `data_structure` 的输出。
+- 如需让 retry attempt 带上前一次 validation error，必须保持每次 attempt 独立 child session 的 spec 语义。
+- 补充回归测试覆盖 prompt 的 `data` object contract，至少覆盖 required field、array/integer 字段和禁止输出 schema descriptor 的说明。
+- 修复后重新执行真实公安 workflow，记录模型最终输出是否满足 `{ content, data? }` 和 task `data_structure`，以及配置 `card_type` 的 task 是否创建 card。
+
+- [x] **Step 9: 修复 tool-call 中间消息误记 validation_error**
+
+要求：
+
+- assistant `message_end` 中如果只有 tool call、没有最终 JSON 文本，不得立即记录 `validation_error`。
+- tool-call `message_end` 仍要保留原始 child event log 和 RPC event persistence。
+- 如果 `agent_end` 前仍没有合法最终 task result，attempt 仍必须按现有 `validation_error` 语义失败。
+- 如果 assistant 最终文本存在但不是合法 `{ content, data? }`，仍必须记录 validation error，并按 retry/final fail 语义处理。
+- 补充回归测试覆盖：工具调用中间 `message_end` 不产生 validation_error log，后续最终文本可正常完成；只有 tool call 且 agent_end 时仍失败。
+
+- [ ] **Step 10: runtime 控制、持久化和浏览器人工验收**
 
 必须确认：
 
@@ -1236,7 +1271,7 @@ rg -n "tool_execution_start|tool_execution_end|failed: terminated|jcj-get-case-d
 tail -n 80 logs/logs/<run-uuid>.jsonl
 ```
 
-- [ ] **Step 8: Gate 5 最终收口**
+- [ ] **Step 11: Gate 5 最终收口**
 
 运行：
 

@@ -1,0 +1,8 @@
+{
+  "settings": {
+    "toolPrefix": "none",
+    "directTools": true,
+    "disableProxyTool": true,
+    "sampling": false
+  }
+}

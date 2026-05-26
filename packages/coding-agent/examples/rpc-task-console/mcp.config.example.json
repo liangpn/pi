@@ -1,36 +1,10 @@
 {
-  "servers": {
+  "mcpServers": {
     "caseTools": {
-      "transport": "streamable-http",
       "url": "http://127.0.0.1:9001/mcp",
-      "headers": {}
+      "auth": false,
+      "lifecycle": "lazy",
+      "exposeResources": false
     }
-  },
-  "tools": [
-    {
-      "name": "jcj-get-case-detail",
-      "server": "caseTools",
-      "mcpTool": "jcj-get-case-detail"
-    },
-    {
-      "name": "panel-operate",
-      "server": "caseTools",
-      "mcpTool": "panel-operate"
-    },
-    {
-      "name": "background-check",
-      "server": "caseTools",
-      "mcpTool": "background-check"
-    },
-    {
-      "name": "getPrettyPlanInstance",
-      "server": "caseTools",
-      "mcpTool": "getPrettyPlanInstance"
-    },
-    {
-      "name": "device-operate",
-      "server": "caseTools",
-      "mcpTool": "device-operate"
-    }
-  ]
+  }
 }

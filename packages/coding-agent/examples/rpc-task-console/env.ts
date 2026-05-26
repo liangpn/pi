@@ -4,15 +4,21 @@ import { prepareChildSettingsSync } from "./child-settings.js";
 import { loadRuntimeConfig, type RuntimeConfig } from "./runtime-config.js";
 
 export const PI_DEMO_TASK_ALLOWED_TOOLS_ENV = "PI_DEMO_TASK_ALLOWED_TOOLS";
+export const PI_DEMO_MCP_DIRECT_TOOL_SPECS_ENV = "PI_DEMO_MCP_DIRECT_TOOL_SPECS";
+export const PI_MCP_ADAPTER_PACKAGE_SOURCE = "npm:pi-mcp-adapter@2.8.0";
 
 export interface RpcTaskConsoleEnv {
 	readonly exampleDir: string;
 	readonly port: number;
+	readonly publicUrl?: string;
 	readonly piCommand: string;
 	readonly piArgs: string[];
 	readonly childEnv: NodeJS.ProcessEnv;
 	readonly modelsJsonPath?: string;
 	readonly mcpConfigPath?: string;
+	readonly piMcpConfigPath?: string;
+	readonly childMcpConfigPath?: string;
+	readonly mcpCachePath?: string;
 	readonly outputDir: string;
 	readonly snapshotDir: string;
 	readonly logDir: string;
@@ -81,16 +87,21 @@ export function loadDemoEnv(exampleDir: string, baseEnv: NodeJS.ProcessEnv): Rpc
 
 	const llmConfig = loadLlmConfig(exampleDir, childEnv);
 	const modelConfig = writeDemoModelsJson(childAgentDir, childEnv, llmConfig);
-	const mcpConfigPath = resolveOptionalConfigPath(
+	const mcpConfigPath = resolveOptionalConfigPath(exampleDir, readEnv(childEnv, "PI_DEMO_MCP_CONFIG"), ".mcp.json");
+	const piMcpConfigPath = resolveOptionalConfigPath(
 		exampleDir,
-		readEnv(childEnv, "PI_DEMO_MCP_CONFIG"),
-		"mcp.config.json",
+		readEnv(childEnv, "PI_DEMO_PI_MCP_CONFIG"),
+		join(".pi", "mcp.json"),
 	);
-	if (mcpConfigPath) {
-		childEnv.PI_DEMO_MCP_CONFIG_PATH = mcpConfigPath;
-	}
+	const childMcpConfigPath = mcpConfigPath ? join(childAgentDir, "mcp.json") : undefined;
+	const mcpCachePath = mcpConfigPath ? join(childAgentDir, "mcp-cache.json") : undefined;
+	if (mcpConfigPath) childEnv.PI_DEMO_MCP_CONFIG_PATH = mcpConfigPath;
+	if (piMcpConfigPath) childEnv.PI_DEMO_PI_MCP_CONFIG_PATH = piMcpConfigPath;
+	if (childMcpConfigPath) childEnv.PI_DEMO_CHILD_MCP_CONFIG_PATH = childMcpConfigPath;
+	if (mcpCachePath) childEnv.PI_DEMO_MCP_CACHE_PATH = mcpCachePath;
 
 	const port = parsePort(childEnv.PI_DEMO_PORT);
+	const publicUrl = readEnv(childEnv, "PI_DEMO_PUBLIC_URL");
 	const piCommand =
 		childEnv.PI_DEMO_PI_COMMAND && childEnv.PI_DEMO_PI_COMMAND.trim().length > 0
 			? childEnv.PI_DEMO_PI_COMMAND
@@ -108,20 +119,23 @@ export function loadDemoEnv(exampleDir: string, baseEnv: NodeJS.ProcessEnv): Rpc
 					"--model",
 					modelConfig.selectedModel,
 				];
-	const piArgs = applyMcpExtensionArgs(
+	const piArgs = applyMcpAdapterArgs(
 		applyChildSessionArgs(basePiArgs, enableChildSession ? childSessionDir : undefined),
-		mcpConfigPath,
-		exampleDir,
+		childMcpConfigPath,
 	);
 
 	const env: RpcTaskConsoleEnv = {
 		exampleDir,
 		port,
+		publicUrl,
 		piCommand,
 		piArgs,
 		childEnv,
 		modelsJsonPath: modelConfig.modelsJsonPath,
 		mcpConfigPath,
+		piMcpConfigPath,
+		childMcpConfigPath,
+		mcpCachePath,
 		outputDir,
 		snapshotDir,
 		logDir,
@@ -361,15 +375,11 @@ function findPackageWorkspaceRoot(startDir: string): string | undefined {
 	}
 }
 
-function applyMcpExtensionArgs(
-	args: readonly string[],
-	mcpConfigPath: string | undefined,
-	exampleDir: string,
-): string[] {
-	if (!mcpConfigPath || args.includes("--extension") || args.includes("-e")) {
+function applyMcpAdapterArgs(args: readonly string[], childMcpConfigPath: string | undefined): string[] {
+	if (!childMcpConfigPath || args.includes("--mcp-config")) {
 		return [...args];
 	}
-	return [...args, "--extension", join(exampleDir, "extensions", "mcp-tools.ts")];
+	return [...args, "--mcp-config", childMcpConfigPath];
 }
 
 function applyChildSessionArgs(args: readonly string[], childSessionDir: string | undefined): string[] {

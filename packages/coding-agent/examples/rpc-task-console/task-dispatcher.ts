@@ -1,5 +1,10 @@
 import { randomUUID } from "node:crypto";
-import { PI_DEMO_TASK_ALLOWED_TOOLS_ENV } from "./env.js";
+import {
+	assertMcpMetadataCachePrewarmed,
+	type McpDirectToolSpec,
+	readPrewarmedMcpDirectToolSpecs,
+} from "./child-settings.js";
+import { PI_DEMO_MCP_DIRECT_TOOL_SPECS_ENV, PI_DEMO_TASK_ALLOWED_TOOLS_ENV } from "./env.js";
 import { buildTaskPrompt } from "./prompt-builder.js";
 import {
 	parseTaskResultFromAssistantMessage,
@@ -37,6 +42,9 @@ export interface TaskDispatcherOptions {
 	readonly now: () => number;
 }
 
+export const MCP_DIRECT_TOOLS_ENV = "MCP_DIRECT_TOOLS";
+const MCP_PROXY_TOOL_NAME = "mcp";
+
 interface StopOptions {
 	readonly replacementInstruction?: string;
 }
@@ -54,6 +62,8 @@ export class TaskDispatcher {
 	}
 
 	async run(): Promise<void> {
+		this.ensureMcpPrewarmed();
+		this.validateNoMcpProxyTool();
 		for (let stepIndex = 0; stepIndex < this.options.steps.length; stepIndex += 1) {
 			this.activeStepIndex = stepIndex;
 			const step = this.options.steps[stepIndex];
@@ -81,7 +91,7 @@ export class TaskDispatcher {
 			return;
 		}
 		this.stopReason = reason;
-		if (reason !== "timeout_after_stop") {
+		if (reason === "user_stopped" || reason === "replaced_by_new_instruction") {
 			this.options.store.markRunStopping(
 				this.options.runId,
 				reason,
@@ -103,12 +113,7 @@ export class TaskDispatcher {
 		let finalTaskFailed = false;
 
 		const launchNextTask = () => {
-			while (
-				!this.stopReason &&
-				!finalTaskFailed &&
-				runningTasks.size < concurrencyLimit &&
-				queuedTasks.length > 0
-			) {
+			while (!this.stopReason && runningTasks.size < concurrencyLimit && queuedTasks.length > 0) {
 				const task = queuedTasks.shift();
 				if (!task) {
 					break;
@@ -135,9 +140,7 @@ export class TaskDispatcher {
 				this.cancelQueuedTasks(stepIndex);
 				continue;
 			}
-			if (!finalTaskFailed) {
-				launchNextTask();
-			}
+			launchNextTask();
 		}
 
 		if (this.stopReason) {
@@ -259,6 +262,7 @@ export class TaskDispatcher {
 	private createChildArgs(task: PlanTask): string[] {
 		const args = stripToolFlags(this.options.args);
 		const allowedTools = mergeAllowedTools(task.tools ?? [], this.options.runtimeConfig.minimal_system_tools);
+		assertMcpProxyToolNotAllowed(allowedTools, task.id);
 		if (allowedTools.length === 0) {
 			return [...args, "--no-tools"];
 		}
@@ -267,10 +271,34 @@ export class TaskDispatcher {
 
 	private createChildEnv(task: PlanTask): NodeJS.ProcessEnv {
 		const allowedTools = mergeAllowedTools(task.tools ?? [], this.options.runtimeConfig.minimal_system_tools);
-		return {
+		assertMcpProxyToolNotAllowed(allowedTools, task.id);
+		const mcpDirectToolSpecs = readPrewarmedMcpDirectToolSpecs(this.options.env);
+		const mcpDirectTools = createMcpDirectToolsEnvValue(allowedTools, mcpDirectToolSpecs);
+		const env: NodeJS.ProcessEnv = {
 			...this.options.env,
 			[PI_DEMO_TASK_ALLOWED_TOOLS_ENV]: JSON.stringify(allowedTools),
 		};
+		if (mcpDirectToolSpecs.length > 0) {
+			env[PI_DEMO_MCP_DIRECT_TOOL_SPECS_ENV] = JSON.stringify(mcpDirectToolSpecs);
+		}
+		if (mcpDirectTools) {
+			env[MCP_DIRECT_TOOLS_ENV] = mcpDirectTools;
+		} else {
+			delete env[MCP_DIRECT_TOOLS_ENV];
+		}
+		return env;
+	}
+
+	private ensureMcpPrewarmed(): void {
+		assertMcpMetadataCachePrewarmed(this.options.env);
+	}
+
+	private validateNoMcpProxyTool(): void {
+		for (const step of this.options.steps) {
+			for (const task of step.tasks) {
+				assertMcpProxyToolNotAllowed(task.tools ?? [], task.id);
+			}
+		}
 	}
 
 	private async handleChildEvent(
@@ -330,7 +358,7 @@ export class TaskDispatcher {
 				detail: event,
 				time: this.options.now(),
 			});
-			if (activeTask.stopRequested && this.stopReason) {
+			if (activeTask.stopRequested) {
 				return;
 			}
 			await this.finalizeAttemptFailure(activeTask, {
@@ -392,7 +420,7 @@ export class TaskDispatcher {
 				detail: event,
 				time: this.options.now(),
 			});
-			if (activeTask.stopRequested && this.stopReason) {
+			if (activeTask.stopRequested) {
 				return;
 			}
 			await this.finalizeAttemptFailure(activeTask, {
@@ -421,7 +449,7 @@ export class TaskDispatcher {
 
 		if (event.type === "message_end") {
 			this.logChildEvent(step.id, task.id, activeTask, event);
-			if (isAssistantMessageEvent(event.message)) {
+			if (isAssistantMessageEvent(event.message) && hasAssistantText(event.message)) {
 				const runtimeTarget = this.getRuntimeStepTask(step.id, task.id);
 				if (runtimeTarget) {
 					try {
@@ -459,7 +487,7 @@ export class TaskDispatcher {
 			if (event.willRetry === true || activeTask.finalized) {
 				return;
 			}
-			if (activeTask.stopRequested && this.stopReason) {
+			if (activeTask.stopRequested) {
 				return;
 			}
 			if (activeTask.forcedFailure) {
@@ -485,13 +513,17 @@ export class TaskDispatcher {
 	}
 
 	private async stopActiveTask(activeTask: ActiveTask): Promise<void> {
-		if (activeTask.finalized || activeTask.stopRequested || !this.stopReason) {
+		await this.stopActiveTaskForReason(activeTask, this.stopReason);
+	}
+
+	private async stopActiveTaskForReason(activeTask: ActiveTask, reason: StopReason | undefined): Promise<void> {
+		if (activeTask.finalized || activeTask.stopRequested || !reason) {
 			return;
 		}
 		activeTask.stopRequested = true;
-		let stopOutcomeReason: StopReason = this.stopReason;
+		let stopOutcomeReason: StopReason = reason;
 		try {
-			activeTask.child.sendSteer(createStopSteerMessage(this.stopReason));
+			activeTask.child.sendSteer(createStopSteerMessage(reason));
 		} catch (error: unknown) {
 			this.logCleanupFailure(activeTask, "发送 steer 失败", error);
 		}
@@ -529,7 +561,7 @@ export class TaskDispatcher {
 			}
 		}
 		activeTask.cleanupCompleted = true;
-		await this.finalizeAttemptStopped(activeTask, stopOutcomeReason, this.stopReason);
+		await this.finalizeAttemptStopped(activeTask, stopOutcomeReason, reason);
 	}
 
 	private async handleToolLimitExceeded(activeTask: ActiveTask): Promise<void> {
@@ -968,6 +1000,23 @@ function isAssistantMessageEvent(message: unknown): boolean {
 	);
 }
 
+function hasAssistantText(message: unknown): boolean {
+	if (typeof message !== "object" || message === null || !("content" in message)) {
+		return false;
+	}
+	const content = (message as { readonly content?: unknown }).content;
+	if (!Array.isArray(content)) {
+		return false;
+	}
+	return content.some((part) => {
+		if (typeof part !== "object" || part === null || !("type" in part) || !("text" in part)) {
+			return false;
+		}
+		const textPart = part as { readonly type?: unknown; readonly text?: unknown };
+		return textPart.type === "text" && typeof textPart.text === "string" && textPart.text.trim().length > 0;
+	});
+}
+
 function toValidationError(error: unknown, taskId: string): TaskError {
 	if (error instanceof TaskResultValidationError) {
 		return {
@@ -1061,6 +1110,54 @@ function mergeAllowedTools(primary: readonly string[], fallback: readonly string
 		merged.push(tool);
 	}
 	return merged;
+}
+
+export function createMcpDirectToolsEnvValue(
+	allowedTools: readonly string[],
+	mcpDirectToolSpecs: readonly McpDirectToolSpec[],
+): string | undefined {
+	if (mcpDirectToolSpecs.length === 0) {
+		return undefined;
+	}
+	const specsByName = new Map(mcpDirectToolSpecs.map((spec) => [spec.name, spec.adapterSpec]));
+	const adapterSpecs: string[] = [];
+	const seen = new Set<string>();
+	for (const toolName of allowedTools) {
+		const futureIdentity = parseFutureMcpIdentity(toolName);
+		const adapterSpec = futureIdentity
+			? mcpDirectToolSpecs.find(
+					(spec) => spec.server === futureIdentity.server && spec.mcpTool === futureIdentity.tool,
+				)?.adapterSpec
+			: specsByName.get(toolName);
+		if (!adapterSpec || seen.has(adapterSpec)) {
+			continue;
+		}
+		seen.add(adapterSpec);
+		adapterSpecs.push(adapterSpec);
+	}
+	return adapterSpecs.length > 0 ? adapterSpecs.join(",") : undefined;
+}
+
+export function parseFutureMcpIdentity(
+	toolName: string,
+): { readonly server: string; readonly tool: string } | undefined {
+	if (!toolName.startsWith("$mcp_")) {
+		return undefined;
+	}
+	const separatorIndex = toolName.indexOf(":");
+	if (separatorIndex <= "$mcp_".length || separatorIndex === toolName.length - 1) {
+		return undefined;
+	}
+	return {
+		server: toolName.slice("$mcp_".length, separatorIndex),
+		tool: toolName.slice(separatorIndex + 1),
+	};
+}
+
+function assertMcpProxyToolNotAllowed(allowedTools: readonly string[], taskId: string): void {
+	if (allowedTools.includes(MCP_PROXY_TOOL_NAME)) {
+		throw new Error(`Task "${taskId}" must not allow the MCP proxy tool "mcp"; use direct MCP tool names instead`);
+	}
 }
 
 function formatError(error: unknown): string {
