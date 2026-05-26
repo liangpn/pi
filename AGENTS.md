@@ -7,16 +7,39 @@ When `.codex-harness.toml` is enabled and `mode = "control-plane"`, the harness 
 If `.codex-harness.toml` sets `allow_main_agent_code_edits = false`:
 
 - The main session MUST NOT edit business code, test code, build/config code, generated code, or examples.
-- The main session MAY perform only control-plane work: read-only inspection, requirement alignment, planning, subagent delegation, review, test command dispatch, confirmed structural or semantic changes to specs, plan/ledger updates with traceable rationale, and routine factual status updates to already-confirmed plan/ledger files.
-- During implementation, the main session may adjust plans and ledgers when it discovers omissions, file-boundary corrections, task status changes, delegation facts, verification evidence, or risks. These plan/ledger changes do not require interrupting the user, but they MUST be recorded and summarized in the final report.
+- The main session MAY perform only control-plane work: read-only inspection, requirement alignment, planning, subagent delegation, review, test command dispatch, confirmed spec updates, plan updates within the boundaries below, ledger updates, and routine factual status reports.
 - The main session MUST interrupt for user confirmation before changing specs or performing high-risk operations, including edits outside the project/workspace, destructive git/filesystem operations, escalation that writes outside approved roots, or changes to global agent/harness/hook configuration unless the user explicitly requested that change in the current turn.
 - "Continue working", "do meaningful non-overlapping work", or "carry the work through implementation" MUST be interpreted as control-plane work only.
-- If a subagent times out, fails, or leaves partial code changes, the main session MUST NOT take over implementation. It may stop the subagent, record evidence, review diffs, ask the user, or delegate a new subagent.
+
+### Spec, Plan, and Ledger Boundaries
+
+- Specs are the source of truth for goals, requirements, scope, non-goals, constraints, design decisions, runtime semantics, and acceptance criteria.
+- Plans are the source of truth for task decomposition, execution order, file boundaries, validation commands, review gates, and checkbox status.
+- Ledgers are the source of truth for execution history, subagent delegation and reports, verification evidence, runtime findings, review findings, risks, blockers, and open questions.
+- Plan files MUST NOT be used as execution logs. Do not write subagent reports, command outputs, validation evidence, runtime findings, historical notes, risks, or blockers into plan files.
+- During implementation, the main session may update plan files only for task-structure changes, checklist status, discovered file-boundary corrections, validation commands, or gate criteria. These changes do not require interrupting the user when they preserve the confirmed spec semantics.
+- During implementation, the main session may update ledger files for delegation facts, subagent reports, verification evidence, runtime findings, review findings, risks, blockers, and open questions. These ledger updates do not require interrupting the user when they record facts rather than changing confirmed semantics.
+- If an existing plan already contains execution-log material, do not add more. Move or summarize that material into the ledger only when explicitly asked or when doing a confirmed cleanup.
+
+### Control-Plane Responsibility
+
+- Before delegating implementation or accepting a subagent design/fix, the main session MUST read the relevant spec sections and extract the requirement semantics that govern the task.
+- The main session owns requirement and spec alignment. It MUST NOT treat subagent output as authoritative when it changes runtime semantics, acceptance criteria, file scope, or user-facing behavior.
+- If a subagent reports that the spec and plan conflict, that the spec appears unreasonable, that a better approach changes confirmed semantics, or that required edits fall outside the delegated write scope, the main session MUST stop implementation handoff and perform a control-plane review.
+- The control-plane review MUST assess evidence, spec impact, plan impact, file-scope impact, validation impact, and parallel-agent conflict risk before asking the user to approve any semantic, scope, or write-boundary change.
+- When the change is reasonable and necessary, the main session MUST explain the issue, tradeoffs, affected files, and recommended path to the user. Do not silently approve scope expansion through a subagent prompt.
+- When the change is not necessary or conflicts with the spec, the main session MUST redirect the subagent with corrected requirements or delegate a new bounded task. Do not let a symptom-focused fix override the spec.
+- If a subagent times out, fails, or leaves partial code changes, the main session MUST NOT take over implementation. It may stop the subagent, record evidence in the ledger, review diffs, ask the user, or delegate a new bounded task.
 - When a subagent reaches a final state (`completed`, `failed`, `shutdown`, or no longer needed), the main session MUST collect its final report/status, preserve relevant evidence in the ledger when applicable, then close the subagent process with the agent close tool. Do not leave completed subagents running.
+
+### Subagent Contracts
+
 - Subagents may implement only within explicitly delegated write scopes and MUST NOT commit unless the user explicitly asks.
-- Subagents MUST treat specs and plans as current confirmed decisions, not as unquestionable truth. If investigation or implementation reveals a materially better approach, a stale assumption, or a mismatch between requirements and design, the subagent should report the issue, evidence, tradeoffs, and a recommended path without unilaterally changing scope or treating the new approach as approved.
 - When delegating to an implementation subagent, the main session MUST translate harness/project rules into a minimal implementation contract. Do not instruct implementation subagents to read `AGENTS.md`, `.codex-harness.toml`, harness skills, plan/ledger governance, or other control-plane rule files. The prompt MUST say the subagent is an `implementation_worker` subagent, not the main session, and that the main-session code-edit prohibition does not apply to it.
-- Implementation subagent prompts MUST stay minimal: task, exact write scope, scope boundaries, no-commit rule, no-revert rule, required validation commands, authorization/escalation reporting rule, alternative-design reporting rule, and final report requirements. The final report should include completed work, changed files, validation results, risks/open issues, and any evidence-based recommendation that may require spec or plan changes.
+- Implementation subagent prompts MUST include: task, relevant spec and plan requirement summary or paths, exact write scope, scope boundaries, no-commit rule, no-revert rule, required validation commands, authorization/escalation reporting rule, alternative-design reporting rule, and final report requirements.
+- Subagents MUST treat specs and plans as current confirmed decisions, not as unquestionable truth. They MUST check their implementation against the provided spec/plan requirements.
+- Subagents MUST stop and report instead of continuing when they find spec/plan mismatch, questionable spec semantics, missing requirements, required edits outside scope, destructive or high-risk operations, or likely conflicts with other agents' file ownership.
+- Subagent final reports MUST include completed work, changed files, validation results, risks/open issues, and any evidence-based recommendation that may require spec or plan changes.
 
 ## Conversational Style
 
