@@ -982,7 +982,7 @@ UI 是公安指挥工作流的高密度操作控制台，不是营销页。
 - runtime 自生成 ID 和持久化文件名使用 UUID，不拼接 task id 或长 agent run id。
 - “测试”按钮使用公安 workflow JSON 和当前指令输入框内容触发 `/runs/start`。
 - `run-police-workflow.mjs` 使用同一默认 `userInstruction` 触发公安 workflow。
-- MCP 接入实现必须在 Pi 文档和仓库调研结论确认后再调整测试；现有 fake MCP Streamable HTTP adapter 测试不能作为最终架构依据。
+- MCP 接入测试必须覆盖 `pi-mcp-adapter@2.8.0` 固定加载、`directTools` 启用、proxy `mcp` 禁用、metadata cache prewarm、task allowlist 多层强制和旧 demo adapter 退出 active path。
 
 ## 参考文档
 
