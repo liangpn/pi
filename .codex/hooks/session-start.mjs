@@ -9,12 +9,12 @@ if (!hasHarnessSkill(input.cwd)) {
 const active = hasHarnessConfig(input.cwd);
 const additionalContext = active
   ? [
-      "本项目已启用 harness。长期、复杂或多代理协作开发任务开始前，先读 .codex-harness.toml 和 $codex-harness。",
-      "详细规则以 AGENTS.md 和 $codex-harness 为准；hooks 只做时机提醒。"
+      "长期、复杂或多代理协作开发任务开始前，先读 .codex-harness.toml 和 codex-harness skill。详细规则以 AGENTS.md 和 codex-harness skill 为准；",
+      "代码变更、review、debug 或 refactor 前，先使用并遵守 karpathy-guidelines skill；除非更具体规则覆盖，它是本项目通用 coding discipline 的宪法性约束。"
     ].join("\n")
   : [
-      "本项目提供 $codex-harness skill。长期、复杂或多代理协作开发任务开始前，先用该 skill 做只读检查。",
-      "详细规则以 AGENTS.md 和 $codex-harness 为准；hooks 只做时机提醒。"
+      "长期、复杂或多代理协作开发任务开始前，遵循 codex-harness skill 做只读检查。详细规则以 AGENTS.md 和 codex-harness skill 为准；",
+      "代码变更、review、debug 或 refactor 前，先使用并遵守 karpathy-guidelines skill；除非更具体规则覆盖，它是本项目通用 coding discipline 的宪法性约束。"
     ].join("\n");
 
 outputContext("SessionStart", additionalContext);
