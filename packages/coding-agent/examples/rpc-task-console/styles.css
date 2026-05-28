@@ -331,10 +331,16 @@ body.control-edge-left .card-workspace {
   background: linear-gradient(180deg, #258043, #1d6033);
 }
 
+.btn.test-trigger.stop,
 .btn.stop {
   border-color: #9d3437;
   background: #8d2529;
   color: #fff;
+}
+
+.btn.test-trigger.stop:hover:not(:disabled) {
+  border-color: #b4474b;
+  background: #a12b30;
 }
 
 .main-action {

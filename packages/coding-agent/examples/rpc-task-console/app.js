@@ -159,11 +159,7 @@ function setupComposer() {
   if (elements.composer instanceof HTMLFormElement) {
     elements.composer.addEventListener("submit", (event) => {
       event.preventDefault();
-      const instruction = elements.instruction instanceof HTMLTextAreaElement ? elements.instruction.value.trim() : "";
-      if (!latestSnapshot || instruction.length === 0 || requestPending) {
-        return;
-      }
-      void postPrimaryAction(instruction);
+      showConversationUnsupportedNotice();
     });
   }
 
@@ -175,12 +171,17 @@ function setupComposer() {
 
   if (elements.testRun instanceof HTMLButtonElement) {
     elements.testRun.addEventListener("click", () => {
+      const status = latestSnapshot?.run.status ?? "idle";
+      if (requestPending || status === "stopping") {
+        return;
+      }
+      if (status === "running") {
+        void postStop();
+        return;
+      }
       const instruction = elements.instruction instanceof HTMLTextAreaElement ? elements.instruction.value.trim() : "";
       if (instruction.length === 0) {
         window.alert("请输入指令后再测试。");
-        return;
-      }
-      if (requestPending) {
         return;
       }
       void startPoliceWorkflowTest(instruction);
@@ -255,27 +256,6 @@ function setupCardColumns() {
     document.documentElement.style.setProperty("--card-columns", String(columns));
   });
   resizeObserver.observe(elements.cardBoard);
-}
-
-async function postPrimaryAction(instruction) {
-  const status = latestSnapshot?.run.status ?? "idle";
-  if (status === "running") {
-    await postStop();
-    return;
-  }
-  await postRun("/runs/start", instruction);
-}
-
-async function postRun(path, instruction) {
-  setRequestPending(true);
-  try {
-    const payload = { steps: getSelectedStepsPayload(), userInstruction: instruction };
-    await performRunRequest(path, payload);
-  } catch (error) {
-    renderLocalError(error instanceof Error ? error.message : String(error));
-  } finally {
-    setRequestPending(false);
-  }
 }
 
 async function startPoliceWorkflowTest(instruction) {
@@ -389,13 +369,14 @@ function connectEvents() {
 
 function renderSnapshot(snapshot) {
   latestSnapshot = snapshot;
-  if (isResetIdleSnapshot(snapshot)) {
+  const displayRun = isResetIdleSnapshot(snapshot) ? { ...snapshot.run, steps: [] } : snapshot.run;
+  if (displayRun !== snapshot.run) {
     selectedTaskId = undefined;
   }
-  updateSelectedTask(snapshot.run);
+  updateSelectedTask(displayRun);
   renderRunStatus(snapshot.run.status);
   renderMessages(snapshot);
-  renderFlow(snapshot.run.steps);
+  renderFlow(displayRun.steps);
   renderCards(snapshot.cards);
   updateActionState();
 }
@@ -786,24 +767,28 @@ function updateSelectedTask(run) {
 function updateActionState() {
   const status = latestSnapshot?.run.status ?? "idle";
   const hasSnapshot = Boolean(latestSnapshot);
-  const mode = status === "running" ? "stop" : "start";
   if (elements.mainAction instanceof HTMLButtonElement) {
-    const disabled = !hasSnapshot || requestPending || status === "stopping";
-    const label = mode === "stop" ? "停止运行" : "开始运行";
-    elements.mainAction.disabled = disabled;
-    elements.mainAction.dataset.mode = mode;
-    elements.mainAction.classList.toggle("stop", mode === "stop");
-    elements.mainAction.title = label;
-    elements.mainAction.setAttribute("aria-label", label);
+    elements.mainAction.disabled = !hasSnapshot || requestPending || status === "stopping";
+    elements.mainAction.dataset.mode = "placeholder";
+    elements.mainAction.classList.remove("stop");
+    elements.mainAction.title = "暂不支持对话功能";
+    elements.mainAction.setAttribute("aria-label", "暂不支持对话功能");
   }
   if (elements.mainActionText instanceof HTMLElement) {
-    elements.mainActionText.textContent = mode === "stop" ? "停止" : "开始";
+    elements.mainActionText.textContent = "开始";
   }
   if (elements.resetRun instanceof HTMLButtonElement) {
     elements.resetRun.disabled = !hasSnapshot || requestPending || status === "running" || status === "stopping";
   }
   if (elements.testRun instanceof HTMLButtonElement) {
+    const mode = status === "running" ? "stop" : "start";
+    const label = mode === "stop" ? "停止" : "开始测试";
     elements.testRun.disabled = requestPending || status === "stopping";
+    elements.testRun.dataset.mode = mode;
+    elements.testRun.classList.toggle("stop", mode === "stop");
+    elements.testRun.textContent = label;
+    elements.testRun.title = label;
+    elements.testRun.setAttribute("aria-label", label);
   }
   if (elements.instruction instanceof HTMLTextAreaElement) {
     elements.instruction.disabled = requestPending || status === "stopping";
@@ -815,9 +800,8 @@ function setRequestPending(value) {
   updateActionState();
 }
 
-function getSelectedStepsPayload() {
-  const steps = latestSnapshot?.run?.steps;
-  return Array.isArray(steps) ? steps : [];
+function showConversationUnsupportedNotice() {
+  window.alert("暂不支持对话功能");
 }
 
 function resolveTaskTitle(steps, taskId) {

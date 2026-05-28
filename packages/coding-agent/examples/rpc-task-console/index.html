@@ -14,7 +14,15 @@
           <h1>公安指挥任务控制台</h1>
         </div>
         <div class="top-actions" aria-label="运行操作">
-          <button class="btn test-trigger" type="button" data-test-run>测试</button>
+          <button
+            class="btn test-trigger"
+            type="button"
+            aria-label="开始测试"
+            title="开始测试"
+            data-test-run
+          >
+            开始测试
+          </button>
           <button class="btn" type="button" aria-label="重置运行" title="重置运行" data-reset-run disabled>
             重置
           </button>
@@ -27,12 +35,6 @@
 
       <div class="workspace">
         <main class="card-workspace" aria-label="卡片工作区">
-          <div class="selection-bar">
-            <div class="selection-title">
-              <h2>任务卡片</h2>
-              <p data-selected-task>暂无任务</p>
-            </div>
-          </div>
           <div class="scroll-area card-board" data-card-board>
             <section class="card-grid" data-card-grid>
               <div class="empty-state" data-empty-state>暂无业务卡片</div>
@@ -126,8 +128,8 @@
                           <button
                             class="btn primary main-action"
                             type="submit"
-                            aria-label="开始运行"
-                            title="开始运行"
+                            aria-label="暂不支持对话功能"
+                            title="暂不支持对话功能"
                             data-main-action
                             disabled
                           >

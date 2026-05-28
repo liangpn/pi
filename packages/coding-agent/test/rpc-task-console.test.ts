@@ -44,6 +44,7 @@ import type {
 	ChildAgentProcessLike,
 	NormalizedChildEvent,
 	PlanStep,
+	RuntimeStep,
 	RuntimeTask,
 	TaskResult,
 	TaskRun,
@@ -3706,6 +3707,409 @@ function createDemoEnv(
 	};
 }
 
+interface FrontendHarnessFetchCall {
+	readonly path: string;
+	readonly init?: RequestInit;
+}
+
+interface FrontendHarness {
+	readonly instruction: FakeTextAreaElement;
+	readonly mainAction: FakeButtonElement;
+	readonly testRun: FakeButtonElement;
+	readonly fetchCalls: FrontendHarnessFetchCall[];
+	readonly alerts: string[];
+	readonly initPromise: Promise<void>;
+	readonly setSnapshot: (snapshot: TaskSnapshot) => void;
+	readonly setRequestPending: (value: boolean) => void;
+	readonly submitComposer: () => void;
+	readonly clickTestRun: () => void;
+	readonly getTestRunText: () => string;
+	readonly getTestRunTitle: () => string | null;
+	readonly getTestRunAriaLabel: () => string | null;
+}
+
+type FakeDataset = Record<string, string>;
+type FakeResizeObserverEntry = { readonly contentRect: { readonly width: number } };
+type FakeResizeObserverCallback = (entries: readonly FakeResizeObserverEntry[]) => void;
+
+function createFrontendHarness(): FrontendHarness {
+	const html = readConsoleAsset("index.html");
+	const app = readConsoleAsset("app.js").replace(
+		"void initializePoliceWorkflow();",
+		"const __initPromise = initializePoliceWorkflow();",
+	);
+	const alerts: string[] = [];
+	const fetchCalls: FrontendHarnessFetchCall[] = [];
+	const workflowPayload = {
+		steps: createDemoPlanSteps(),
+		defaultUserInstruction: "默认测试指令",
+	};
+
+	const instruction = new FakeTextAreaElement({ selector: "[data-instruction]", value: "" });
+	const mainActionText = new FakeElement({ selector: "[data-main-action-text]" });
+	const mainAction = new FakeButtonElement({
+		selector: "[data-main-action]",
+		childrenBySelector: {
+			"[data-main-action-text]": mainActionText,
+		},
+	});
+	const resetRun = new FakeButtonElement({ selector: "[data-reset-run]" });
+	const testRun = new FakeButtonElement({ selector: "[data-test-run]", textContent: "测试" });
+	const runStatusText = new FakeElement({ selector: "[data-run-status-text]" });
+	const runStatusSymbol = new FakeElement({ selector: ".status-symbol", textContent: "○" });
+	const runStatus = new FakeElement({
+		selector: "[data-run-status]",
+		childrenBySelector: {
+			".status-symbol": runStatusSymbol,
+			"[data-run-status-text]": runStatusText,
+		},
+	});
+	const composer = new FakeFormElement({ selector: "[data-composer]" });
+	const messages = new FakeElement({ selector: "[data-messages]" });
+	const flowList = new FakeElement({ selector: "[data-flow-list]" });
+	const totalProgress = new FakeElement({ selector: "[data-total-progress]" });
+	const selectedTask = new FakeElement({ selector: "[data-selected-task]" });
+	const cardBoard = new FakeElement({ selector: "[data-card-board]" });
+	const cardGrid = new FakeElement({ selector: "[data-card-grid]" });
+	const rail = new FakeButtonElement({ selector: "[data-rail]" });
+	const toggleButtons = [
+		new FakeButtonElement({ selector: "[data-toggle-control]" }),
+		new FakeButtonElement({ selector: "[data-toggle-control]" }),
+	];
+	const sidebarTabs = [
+		new FakeButtonElement({ selector: '[data-sidebar-tab="smart"]', dataset: { sidebarTab: "smart" } }),
+		new FakeButtonElement({ selector: '[data-sidebar-tab="history"]', dataset: { sidebarTab: "history" } }),
+		new FakeButtonElement({ selector: '[data-sidebar-tab="todo"]', dataset: { sidebarTab: "todo" } }),
+	];
+	const tabPanels = [
+		new FakeElement({ selector: '[data-tab-panel="smart"]', dataset: { tabPanel: "smart" } }),
+		new FakeElement({ selector: '[data-tab-panel="history"]', dataset: { tabPanel: "history" } }),
+		new FakeElement({ selector: '[data-tab-panel="todo"]', dataset: { tabPanel: "todo" } }),
+	];
+
+	const document = new FakeDocument(
+		{
+			"[data-card-board]": cardBoard,
+			"[data-card-grid]": cardGrid,
+			"[data-messages]": messages,
+			"[data-flow-list]": flowList,
+			"[data-total-progress]": totalProgress,
+			"[data-selected-task]": selectedTask,
+			"[data-run-status]": runStatus,
+			"[data-run-status-text]": runStatusText,
+			"[data-instruction]": instruction,
+			"[data-main-action]": mainAction,
+			"[data-main-action-text]": mainActionText,
+			"[data-reset-run]": resetRun,
+			"[data-test-run]": testRun,
+			"[data-composer]": composer,
+			"[data-rail]": rail,
+		},
+		{
+			"[data-toggle-control]": toggleButtons,
+			"[data-sidebar-tab]": sidebarTabs,
+			"[data-tab-panel]": tabPanels,
+		},
+	);
+	const fetch = async (path: string, init?: RequestInit): Promise<Response> => {
+		fetchCalls.push({ path, init });
+		if (path === "/police-workflow.json") {
+			return createJsonResponse(workflowPayload);
+		}
+		if (path === "/runs/start") {
+			return createJsonResponse({ ok: true }, 202);
+		}
+		if (path === "/runs/stop") {
+			return createJsonResponse({ ok: true }, 200);
+		}
+		if (path === "/runs/reset") {
+			return createJsonResponse({ ok: true }, 200);
+		}
+		throw new Error(`Unexpected fetch path: ${path}`);
+	};
+	const windowObject = {
+		matchMedia: () => ({ matches: false }),
+		addEventListener: () => undefined,
+		alert: (message: string) => {
+			alerts.push(message);
+		},
+		getComputedStyle: () => ({ maxHeight: "144" }),
+		innerHeight: 900,
+		innerWidth: 1440,
+		CSS: { escape: (value: string) => value },
+	};
+	class FakeEventSource {
+		addEventListener(_name: string, _handler: (event: { readonly data?: string }) => void): void {}
+	}
+	class FakeResizeObserver {
+		readonly callback: FakeResizeObserverCallback;
+
+		constructor(callback: FakeResizeObserverCallback) {
+			this.callback = callback;
+		}
+
+		observe(_target: FakeElement): void {}
+	}
+	const bootstrap = new Function(
+		"document",
+		"window",
+		"fetch",
+		"EventSource",
+		"ResizeObserver",
+		"HTMLElement",
+		"HTMLButtonElement",
+		"HTMLTextAreaElement",
+		"HTMLFormElement",
+		"console",
+		`${app}
+return {
+	initPromise: __initPromise,
+	setSnapshot: (snapshot) => {
+		latestSnapshot = snapshot;
+		updateActionState();
+	},
+	setRequestPending: (value) => {
+		requestPending = value;
+		updateActionState();
+	},
+	submitComposer: () => {
+		elements.composer.dispatchEvent({
+			type: "submit",
+			defaultPrevented: false,
+			preventDefault() {
+				this.defaultPrevented = true;
+			},
+		});
+	},
+	clickTestRun: () => {
+		elements.testRun.dispatchEvent({ type: "click" });
+	},
+	getTestRunText: () => elements.testRun.textContent,
+	getTestRunTitle: () => elements.testRun.title,
+	getTestRunAriaLabel: () => elements.testRun.getAttribute("aria-label"),
+};`,
+	);
+	const runtime = bootstrap(
+		document,
+		windowObject,
+		fetch,
+		FakeEventSource,
+		FakeResizeObserver,
+		FakeElement,
+		FakeButtonElement,
+		FakeTextAreaElement,
+		FakeFormElement,
+		console,
+	) as Omit<FrontendHarness, "instruction" | "mainAction" | "testRun" | "fetchCalls" | "alerts">;
+
+	expect(html).toContain("data-test-run");
+
+	return {
+		...runtime,
+		instruction,
+		mainAction,
+		testRun,
+		fetchCalls,
+		alerts,
+	};
+}
+
+class FakeClassList {
+	private readonly values = new Set<string>();
+
+	toggle(name: string, force?: boolean): boolean {
+		const shouldAdd = force ?? !this.values.has(name);
+		if (shouldAdd) {
+			this.values.add(name);
+			return true;
+		}
+		this.values.delete(name);
+		return false;
+	}
+
+	add(...names: string[]): void {
+		for (const name of names) {
+			this.values.add(name);
+		}
+	}
+
+	remove(...names: string[]): void {
+		for (const name of names) {
+			this.values.delete(name);
+		}
+	}
+}
+
+class FakeStyle {
+	private readonly values = new Map<string, string>();
+	height = "";
+	overflowY = "";
+
+	setProperty(name: string, value: string): void {
+		this.values.set(name, value);
+	}
+
+	removeProperty(name: string): void {
+		this.values.delete(name);
+	}
+}
+
+class FakeElement {
+	readonly dataset: FakeDataset;
+	readonly style = new FakeStyle();
+	readonly classList = new FakeClassList();
+	readonly childrenBySelector: Map<string, FakeElement>;
+	readonly listeners = new Map<string, Array<(event: Record<string, unknown>) => void>>();
+	readonly attributes = new Map<string, string>();
+	textContent: string;
+	title = "";
+	innerHTML = "";
+	hidden = false;
+	tabIndex = 0;
+	offsetHeight = 36;
+	scrollHeight = 38;
+	clientWidth = 1200;
+	scrollTop = 0;
+	scrollHeightValue = 0;
+
+	constructor(
+		options: {
+			readonly selector?: string;
+			readonly dataset?: Record<string, string>;
+			readonly textContent?: string;
+			readonly childrenBySelector?: Record<string, FakeElement>;
+		} = {},
+	) {
+		this.dataset = { ...(options.dataset ?? {}) };
+		this.textContent = options.textContent ?? "";
+		this.childrenBySelector = new Map(Object.entries(options.childrenBySelector ?? {}));
+		if (options.selector) {
+			this.attributes.set("data-selector", options.selector);
+		}
+	}
+
+	addEventListener(type: string, listener: (event: Record<string, unknown>) => void): void {
+		const existing = this.listeners.get(type) ?? [];
+		existing.push(listener);
+		this.listeners.set(type, existing);
+	}
+
+	dispatchEvent(event: Record<string, unknown>): void {
+		const listeners = this.listeners.get(String(event.type)) ?? [];
+		for (const listener of listeners) {
+			listener(event);
+		}
+	}
+
+	querySelector(selector: string): FakeElement | null {
+		return this.childrenBySelector.get(selector) ?? null;
+	}
+
+	querySelectorAll(selector: string): FakeElement[] {
+		const child = this.childrenBySelector.get(selector);
+		return child ? [child] : [];
+	}
+
+	setAttribute(name: string, value: string): void {
+		this.attributes.set(name, value);
+		if (name === "title") {
+			this.title = value;
+		}
+	}
+
+	getAttribute(name: string): string | null {
+		return this.attributes.get(name) ?? null;
+	}
+
+	removeAttribute(name: string): void {
+		this.attributes.delete(name);
+	}
+
+	append(_node: FakeElement): void {}
+
+	appendChild(node: FakeElement): FakeElement {
+		return node;
+	}
+
+	replaceChildren(..._nodes: FakeElement[]): void {}
+
+	getBoundingClientRect() {
+		return {
+			x: 0,
+			y: 0,
+			width: 120,
+			height: 36,
+			top: 0,
+			right: 120,
+			bottom: 36,
+			left: 0,
+			toJSON: () => ({}),
+		};
+	}
+
+	hasPointerCapture(_pointerId: number): boolean {
+		return false;
+	}
+
+	setPointerCapture(_pointerId: number): void {}
+
+	releasePointerCapture(_pointerId: number): void {}
+}
+
+class FakeButtonElement extends FakeElement {
+	disabled = false;
+}
+
+class FakeTextAreaElement extends FakeElement {
+	disabled = false;
+	value: string;
+
+	constructor(options: ConstructorParameters<typeof FakeElement>[0] & { readonly value?: string } = {}) {
+		super(options);
+		this.value = options.value ?? "";
+	}
+}
+
+class FakeFormElement extends FakeElement {}
+
+class FakeDocument {
+	readonly body = new FakeElement();
+	readonly documentElement = new FakeElement();
+	private readonly elementsBySelector: Record<string, FakeElement>;
+	private readonly arraysBySelector: Record<string, FakeElement[]>;
+
+	constructor(elementsBySelector: Record<string, FakeElement>, arraysBySelector: Record<string, FakeElement[]>) {
+		this.elementsBySelector = elementsBySelector;
+		this.arraysBySelector = arraysBySelector;
+	}
+
+	querySelector(selector: string): FakeElement | null {
+		return this.elementsBySelector[selector] ?? null;
+	}
+
+	querySelectorAll(selector: string): FakeElement[] {
+		return this.arraysBySelector[selector] ?? [];
+	}
+
+	createDocumentFragment() {
+		return {
+			childNodes: [],
+			append: (..._nodes: unknown[]) => undefined,
+		};
+	}
+
+	createElement(_tagName: string): FakeElement {
+		return new FakeElement();
+	}
+}
+
+function createJsonResponse(body: unknown, status = 200): Response {
+	return new Response(JSON.stringify(body), {
+		status,
+		headers: { "content-type": "application/json" },
+	});
+}
+
 describe("rpc task console frontend static contracts", () => {
 	test("renders backend conversation messages and receipts without rendering freeform user instructions", () => {
 		const app = readConsoleAsset("app.js");
@@ -3722,11 +4126,11 @@ describe("rpc task console frontend static contracts", () => {
 		expect(html).not.toContain("free-chat");
 	});
 
-	test("keeps canonical route usage while the primary action switches between start and stop", () => {
+	test("keeps canonical route usage while the sidebar composer is a placeholder and the top-right test button owns start-stop", () => {
 		const app = readConsoleAsset("app.js");
 		const html = readConsoleAsset("index.html");
 		const setupComposer = extractFunctionSource(app, "setupComposer");
-		const postPrimaryAction = extractFunctionSource(app, "postPrimaryAction");
+		const startPoliceWorkflowTest = extractFunctionSource(app, "startPoliceWorkflowTest");
 		const postStop = extractFunctionSource(app, "postStop");
 		const postReset = extractFunctionSource(app, "postReset");
 		const updateActionState = extractFunctionSource(app, "updateActionState");
@@ -3741,17 +4145,18 @@ describe("rpc task console frontend static contracts", () => {
 		expect(html.indexOf("data-test-run")).toBeLessThan(html.indexOf("data-reset-run"));
 		expect(html).not.toContain("data-stop");
 		expect(html).not.toContain("data-submit");
-		expect(setupComposer).toContain("postPrimaryAction");
+		expect(setupComposer).toContain("showConversationUnsupportedNotice()");
+		expect(app).toContain('window.alert("暂不支持对话功能")');
+		expect(setupComposer).not.toContain("postPrimaryAction");
 		expect(setupComposer).toContain("postReset()");
-		expect(postPrimaryAction).toContain('status === "running"');
-		expect(postPrimaryAction).toContain('"/runs/start"');
-		expect(postPrimaryAction).not.toContain('"/runs/replace"');
-		expect(postPrimaryAction).toContain("getSelectedStepsPayload()");
-		expect(postPrimaryAction).toContain("userInstruction: instruction");
+		expect(startPoliceWorkflowTest).toContain('"/runs/start"');
+		expect(startPoliceWorkflowTest).toContain("steps: workflow.steps");
+		expect(startPoliceWorkflowTest).toContain("userInstruction: instruction");
 		expect(postStop).toContain('fetch("/runs/stop"');
 		expect(postReset).toContain('fetch("/runs/reset", { method: "POST" })');
 		expect(updateActionState).toContain("elements.mainAction.disabled");
 		expect(updateActionState).toContain("elements.resetRun.disabled");
+		expect(updateActionState).toContain("elements.testRun.disabled");
 		expect(updateActionState).toContain('status === "running"');
 		expect(updateActionState).toContain('status === "stopping"');
 		expect(app).not.toContain("/api/");
@@ -3766,7 +4171,11 @@ describe("rpc task console frontend static contracts", () => {
 
 		expect(renderSnapshot).toContain("isResetIdleSnapshot(snapshot)");
 		expect(renderSnapshot).toContain("selectedTaskId = undefined");
-		expect(renderSnapshot).toContain("updateSelectedTask(snapshot.run)");
+		expect(renderSnapshot).toContain("steps: []");
+		expect(renderSnapshot).toContain("updateSelectedTask(displayRun)");
+		expect(renderSnapshot).toContain("renderFlow(displayRun.steps)");
+		expect(renderSnapshot).not.toContain("updateSelectedTask(snapshot.run)");
+		expect(renderSnapshot).not.toContain("renderFlow(snapshot.run.steps)");
 		expect(renderSnapshot).toContain("renderCards(snapshot.cards)");
 		expect(updateSelectedTask).toContain('run.status === "running" || run.status === "stopping"');
 		expect(updateSelectedTask).not.toContain("tasks[0]?.id");
@@ -4010,8 +4419,8 @@ describe("rpc task console frontend static contracts", () => {
 		expect(renderLocalError).toContain('node.setAttribute("aria-label"');
 		expect(renderLocalError).toContain("前端错误");
 		expect(renderLocalError).toContain("message");
-		expect(html).toContain('aria-label="开始运行"');
-		expect(html).not.toContain('aria-label="停止运行"');
+		expect(html).toContain('aria-label="暂不支持对话功能"');
+		expect(html).toContain('aria-label="开始测试"');
 		expect(css).toContain("button:focus-visible");
 		expect(css).toContain("textarea:focus-visible");
 		expect(css).toContain("@media (prefers-reduced-motion: reduce)");
@@ -4025,6 +4434,92 @@ describe("rpc task console frontend static contracts", () => {
 		expect(css).not.toContain("--side-width: min(380px, 40vw);");
 		expect(css).toContain("--side-width: min(360px, 92vw);");
 		expect(css).toContain("--side-width: min(360px, 100vw);");
+	});
+});
+
+describe("rpc task console frontend interactions", () => {
+	test("alerts that chat is unsupported and does not call runtime routes when the sidebar composer submits", async () => {
+		const harness = createFrontendHarness();
+		await harness.initPromise;
+		harness.setSnapshot({
+			run: {
+				id: "idle",
+				status: "idle",
+				userInstruction: "",
+				steps: [],
+				createdAt: 0,
+			},
+			cards: [],
+			logs: [],
+			receipts: [],
+			conversationMessages: [],
+		});
+		harness.instruction.value = "不要启动 runtime";
+
+		harness.submitComposer();
+
+		expect(harness.alerts).toEqual(["暂不支持对话功能"]);
+		expect(
+			harness.fetchCalls.some((call) => ["/runs/start", "/runs/stop", "/runs/replace"].includes(call.path)),
+		).toBe(false);
+	});
+
+	test("starts the top-right test run with police workflow steps and the current instruction", async () => {
+		const harness = createFrontendHarness();
+		await harness.initPromise;
+		harness.setSnapshot({
+			run: {
+				id: "idle",
+				status: "idle",
+				userInstruction: "",
+				steps: [],
+				createdAt: 0,
+			},
+			cards: [],
+			logs: [],
+			receipts: [],
+			conversationMessages: [],
+		});
+		harness.instruction.value = "测试指令";
+
+		harness.clickTestRun();
+		await Promise.resolve();
+
+		const startCall = harness.fetchCalls.find((call) => call.path === "/runs/start");
+		expect(startCall).toBeDefined();
+		expect(startCall?.init?.method).toBe("POST");
+		expect(JSON.parse(String(startCall?.init?.body))).toMatchObject({
+			userInstruction: "测试指令",
+			steps: JSON.parse(JSON.stringify(createDemoPlanSteps())),
+		});
+	});
+
+	test("switches the top-right test run button into stop mode for running snapshots", async () => {
+		const harness = createFrontendHarness();
+		await harness.initPromise;
+		harness.setSnapshot({
+			run: {
+				id: "run-1",
+				status: "running",
+				userInstruction: "进行中",
+				steps: createRuntimeSteps(createDemoPlanSteps()) as readonly RuntimeStep[],
+				createdAt: 0,
+			},
+			cards: [],
+			logs: [],
+			receipts: [],
+			conversationMessages: [],
+		});
+
+		expect(harness.getTestRunText()).toBe("停止");
+		expect(harness.getTestRunTitle()).toBe("停止");
+		expect(harness.getTestRunAriaLabel()).toBe("停止");
+		expect(harness.testRun.disabled).toBe(false);
+
+		harness.clickTestRun();
+		await Promise.resolve();
+
+		expect(harness.fetchCalls.some((call) => call.path === "/runs/stop")).toBe(true);
 	});
 });
 

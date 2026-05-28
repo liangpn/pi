@@ -1350,7 +1350,49 @@ npx tsx ../../node_modules/vitest/dist/cli.js --run test/rpc-task-console.test.t
 npm run check
 ```
 
-- [ ] **Step 13: Gate 5 最终收口**
+- [x] **Step 13: 测试运行控制和对话占位修正**
+
+本步骤来自 Gate 5 前浏览器复验发现：侧栏输入框主按钮在没有 selected steps 时仍调用 `/runs/start`，导致 canonical route 返回 400。第一版尚不支持 main agent 对话或自然语言路由，因此侧栏输入框不得伪装成可执行对话入口。
+
+写入范围：
+
+- `packages/coding-agent/examples/rpc-task-console/index.html`
+- `packages/coding-agent/examples/rpc-task-console/app.js`
+- `packages/coding-agent/examples/rpc-task-console/styles.css`
+- `packages/coding-agent/test/rpc-task-console.test.ts`
+
+要求：
+
+- 右上角“测试”按钮改为测试运行状态按钮：idle / complete / fail / stopped 时显示“开始测试”，running 时显示“停止”并使用停止样式，stopping 或 request pending 时 disabled。
+- 点击“开始测试”时沿用现有测试逻辑：加载公安 workflow JSON，使用当前指令输入框内容调用 `/runs/start`。
+- 点击“停止”时沿用现有 stop 逻辑：调用 `/runs/stop`。
+- 侧栏输入框保留默认指令和可编辑能力，但第一版不支持对话功能；点击侧栏输入框的主按钮或提交表单时只提示“暂不支持对话功能”，不得调用 `/runs/start`、`/runs/replace` 或 `/runs/stop`。
+- 补齐 reset UI 契约：点击右上角重置后，下方“预案指引”也必须恢复初始空态，不残留上一轮 workflow 的 step/task 列表、阶段进度或 task 选中状态；后续点击“开始测试”时再重新渲染公安 workflow。
+- 不实现 main agent、自然语言路由、workflow 选择/编辑、历史或待办数据。
+- 更新 UI/静态测试覆盖：普通对话提交不再调用 `/runs/start`；右上角测试按钮负责 start/stop；空 selected steps 不再造成用户点击侧栏主按钮触发 400；reset 后“预案指引”恢复初始空态。
+
+运行：
+
+```bash
+cd packages/coding-agent
+npx tsx ../../node_modules/vitest/dist/cli.js --run test/rpc-task-console.test.ts
+```
+
+代码修改完成后：
+
+```bash
+npm run check
+```
+
+- [x] **Step 14: Gate 5 最终收口**
+
+本步骤只收口第一版固定 `steps -> runtime -> child agents -> cards/messages/snapshot/persistence` 链路，目标是证明该链路可作为后续 `run_workflow` / Workflow Executor 的底座。
+
+边界：
+
+- 不继续实现或打磨 tabs、历史、待办、main agent、`spawn_agent`、用户自然语言路由、memory 或产品级 UI。
+- 如果真实公安 workflow 未完整跑通，只修影响第一版 runtime / `run_workflow` 底座的阻塞级问题。
+- 第二版入口、队列、历史、Agent Execution Core 和 Execution Snapshot 统一模型进入后续阶段 spec / plan，不作为 Gate 5 阻塞项。
 
 运行：
 
