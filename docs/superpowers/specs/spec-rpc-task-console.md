@@ -6,13 +6,15 @@ RPC 任务控制台是一个基于 Pi 的主从多 agent 架构 POC。
 
 核心机制是 Task Execution Runtime：它接收已选定的 `steps` 流程定义，按 step 串行、task 并行的规则创建独立 Pi RPC 子 agent 会话，跟踪 task 运行态，校验 task 结果，并把进度、任务消息和业务卡片暴露给 UI。
 
-当前可执行版本是第一版 POC。第一版从已选定的 `steps` 开始，不实现主 agent 的流程匹配、用户自然语言路由或 memory 沉淀。第二版完整 POC 会在第一版 runtime 之上增加事件通知入口、用户指令入口和主 agent 委派入口的完整关系设计。
+当前可执行版本是第一版 POC。第一版从已选定的 `steps` 开始，不实现 main agent 的流程匹配、用户自然语言路由或 memory 沉淀。后续阶段设计独立维护在 `docs/superpowers/specs/spec-rpc-task-console-main-agent.md`。
 
-本文档中，第一版章节是当前实现和验收依据；第二版章节只记录后续设计方向和待解决问题，不作为第一版验收依据。
+本文档是第一版当前实现和验收依据；后续阶段文档不作为第一版验收依据。
 
 ## 第一版范围
 
 第一版 POC 以事件通知触发的固定 SOP 流程为主。第一版不定义事件通知的上游协议；进入 Task Execution Runtime 的输入必须已经是 `PlanStep[]` 和一段 `userInstruction`。
+
+Demo server 冷启动时不得预置运行中的业务流程。初始 idle snapshot 的 `steps` 必须为空数组；内置公安 workflow 只作为“测试”按钮和命令行验收脚本的请求载荷，不作为冷启动默认 `PLAN_STEPS`。
 
 入口：
 
@@ -41,11 +43,11 @@ RPC 任务控制台是一个基于 Pi 的主从多 agent 架构 POC。
 
 第一版不包含：
 
-- 主 agent 根据外部 JSON 自动匹配 workflow。
-- 主 agent 处理用户自然语言指令。
-- 主 agent 改写、裁剪或新增 task。
-- 用户打断后把前序 run 上下文交给主 agent。
-- 主 agent 基于 task 完成结果继续推理。
+- main agent 根据外部 JSON 自动匹配 workflow。
+- main agent 处理用户自然语言指令。
+- main agent 改写、裁剪或新增 task。
+- 用户打断后把前序 run 上下文交给 main agent。
+- main agent 基于 task 完成结果继续推理。
 - 失败经验沉淀和 memory 机制。
 - 生产级认证、权限或部署。
 - 后端返回真实视频 bytes。
@@ -62,51 +64,6 @@ RPC 任务控制台是一个基于 Pi 的主从多 agent 架构 POC。
 
 第一版 child Pi RPC process 默认使用 `--no-session`。Pi 原生 child session 不作为第一版事实源。
 
-## 第二版规划
-
-第二版需要覆盖事件通知入口和用户指令入口。第二版是待设计方向，不是第一版实现承诺。进入第二版 plan 前，必须先把本节问题重新讨论并固化为更具体的 spec。
-
-完整入口：
-
-```text
-事件通知入口
-  -> 固定 SOP steps
-  -> Task Execution Runtime
-
-用户指令入口
-  -> 如果存在 running run，先 stop/replace
-  -> 主 agent 接收用户指令和可选 interrupted_run_summary
-  -> 主 agent 判断：
-       -> 直接回答
-       -> 委派 single_task
-       -> 发起 workflow
-  -> Task Execution Runtime
-```
-
-确定方向：
-
-- 事件通知入口不依赖主 agent 触发。
-- 用户指令入口由主 agent 接收和判断。
-- 事件通知入口和主 agent 委派入口共用同一套 Task Execution Runtime。
-- single task 委派可以规范化为单 step 单 task。
-- UI task 状态、UI card、对话区域任务汇报消息必须复用第一版 runtime 机制。
-- 不把整个 workflow runtime 封装为一个长时间阻塞式 tool。
-- 如果主 agent 通过 tool 形态发起 runtime run，tool 不能等待 workflow 完整结束；tool 的同步返回值只能表示 run 已被接收，例如 `{ "run_id": "...", "status": "accepted" }`。
-
-第二版必须继续设计的问题；这些问题在第一版中不实现：
-
-- **上下文交接**：事件通知 SOP 被用户打断后，是否以及如何把已完成 task、运行中 task、失败 task、cards、logs 摘要交给主 agent。
-- **摘要粒度**：默认交给主 agent 的应是结构化 `interrupted_run_summary`，不是完整 child agent message/tool history。
-- **触发时机**：用户指令到达时，是先 stop 完成后再调用主 agent，还是 stop 过程中先给主 agent 部分上下文。
-- **主 agent 继续推理**：task 完成后是否需要注入主 agent 会话并触发下一轮推理。
-- **消息归属**：对话区域中哪些消息属于 runtime 任务消息，哪些属于主 agent 消息。
-- **上下文选择**：哪些 cards、task results、tool errors、attempt diagnostics 可以进入主 agent context。
-- **session 策略**：是否为主 agent、runtime、child agent 分别启用 Pi session；如果启用，session 文件如何关联到 run/task/attempt。
-- **权限边界**：主 agent 委派时能否修改 workflow，能否覆盖 task tools、skills、retry 和 `data_structure`。
-- **并发冲突**：用户指令、事件通知、新 workflow 同时到来时的排队、丢弃、替换和优先级规则。
-- **长期记忆**：task 失败经验如何沉淀到 memory，后续委派如何引用。
-- **审计与回放**：如何基于持久化 snapshot、RPC JSONL、task logs 重建一次 run。
-
 ## 标准术语
 
 - **Step**：串行流程阶段。Step 是计划定义，不直接执行，也不产生卡片。
@@ -116,7 +73,6 @@ RPC 任务控制台是一个基于 Pi 的主从多 agent 架构 POC。
 - **RuntimeTask**：从 task 克隆出的运行态对象，带状态、结果、日志、attempts、子 agent 元数据和终态信息。
 - **Task Execution Runtime**：可复用执行运行时，负责调度、状态、重试、停止、结果校验、卡片和事件输出。
 - **TaskDispatcher**：runtime 内的确定性后端调度器。调度器不是 agent。
-- **主 agent**：第二版中的上游编排 agent。第一版不实现主 agent。
 - **子 agent**：为单个 task attempt 创建的 Pi RPC 子进程/会话。
 - **卡片**：后端工程代码基于 task 配置和 agent 输出组装出的 UI/runtime 对象。
 
@@ -227,7 +183,7 @@ run start
 - task attempt 到达终态后必须释放对应子进程/会话。
 - task 只有在成功 attempt 完成、attempts 用尽失败、或被 stop/replacement 中止后才进入 task 终态。
 - task 成功完成的同一次 completion handling 中，runtime 必须写入 task result、对话区域任务消息，并发布最新 snapshot。
-- 第一版不做 step 内 task 聚合后再通知。step 内聚合行为属于第二版或后续设计，不作为第一版验收依据。
+- 第一版不做 step 内 task 聚合后再通知；step 内聚合后通知不作为第一版验收依据。
 
 终态定义：
 
@@ -868,7 +824,9 @@ Routes：
 - “测试”按钮读取当前指令输入框内容，并用公安 workflow JSON 作为预置 `steps` 调用 `/runs/start`。
 - 如果指令输入框为空，前端弹框提示，不启动 run。
 - 指令输入框默认文本必须与 `docs/superpowers/plans/run-police-workflow.mjs` 的默认 `userInstruction` 一致。
-- 对话框中的正常 start、stop、replace 交互语义不因“测试”按钮改变。
+- HTTP start、stop、replace routes 的 runtime 语义不因“测试”按钮改变。
+- 冷启动或 reset 后如果没有当前选定 workflow，`/api/snapshot` 和 SSE 最新 snapshot 中的 `run.steps` 必须为空数组。
+- `/runs/reset` 空 body 时回到当前已选定 workflow 的 idle snapshot；如果当前没有已选定 workflow，则保持空 `steps`，不得回退到旧 demo fixture。
 
 SSE 要求：
 
@@ -887,13 +845,27 @@ UI 是公安指挥工作流的高密度操作控制台，不是营销页。
 - 顶部标题栏展示产品名称。
 - 业务卡片工作区占据智能协同侧栏之外的主区域。
 - 智能协同侧栏可吸附在左侧或右侧。
-- 智能协同侧栏包含系统回执、任务消息和流程指引。第二版接入主 agent 后，才能展示主 agent 消息。
+- 智能协同侧栏包含系统回执、任务消息和流程指引。第一版不展示 main agent 消息。
+- 智能协同侧栏可保留“智能协同 / 历史 / 待办”tabs 外壳；本轮第一版 POC 不继续打磨 tabs 交互，也不以 tabs 细化作为收口阻塞。“历史”和“待办”tab 只允许展示已有 runtime 可证明的数据或空态，不得伪造会话历史、上游消息事件队列或 main agent 数据。
+- 智能协同侧栏桌面宽度需要为消息区和预案指引提供足够扫描空间；当前 POC 目标宽度为既有宽度的 1.5 倍，窄屏仍必须受视口约束且不得横向滚动。
 - 智能协同侧栏可收起为可拖拽的“智能协同” rail。
 - rail 在当前吸附边缘支持上下拖动。
 - rail 支持拖拽到另一侧边缘并吸附；吸附到左侧时，侧栏从左侧展开；吸附到右侧时，侧栏从右侧展开。
 - 侧栏吸附方向是前端 UI 状态，不得改变 run、step、task、card 或 message 数据。
 - Browser body 固定为视口高度。
 - 卡片工作区、消息区和流程列表独立滚动。
+
+输入与运行控制：
+
+- 指令输入框高度必须随内容自动增减，并保留最大高度和内部滚动，避免挤压整个控制台。
+- 开始和停止必须合并为同一个主操作按钮。未运行或已终态时按钮呈现开始语义并触发 start；运行中时按钮呈现停止语义并触发 stop；stopping 或请求处理中按钮必须禁用。
+- `/runs/replace` 仍是 runtime API 能力，但第一版浏览器主操作按钮不在 running 状态下触发 replace。
+- 浏览器 UI 必须在顶部右上角运行操作区提供显式重置按钮，与“测试”按钮并列。重置按钮调用 `/runs/reset` 回到 idle snapshot，并清空当前 run 的任务状态、卡片工作区、系统回执和 task conversation messages。重置后的卡片工作区必须恢复初始空态：当前任务摘要显示 `暂无任务`，卡片网格显示 `暂无业务卡片`，不得残留旧 task selection、旧 card collapsed/maximized 等本地 UI 状态。浏览器刷新只重连并读取后端最新 snapshot，不承担重置语义。
+
+消息区：
+
+- 初始消息区必须为空白，不显示“等待后端回执。”之类占位消息。
+- 系统回执和 task conversation messages 到达后再渲染消息项。
 
 卡片工作区：
 
@@ -912,7 +884,10 @@ UI 是公安指挥工作流的高密度操作控制台，不是营销页。
 - 展示全部 steps 和 tasks。
 - 展示 step progress counts。
 - 展示 selected task。
+- 初始 `steps` 为空时，流程指引区域不得伪造旧 demo tasks；可保持空列表或非业务空态。
+- 初始 `steps` 为空时，不得显示 `0 / 0` 等伪进度；总进度和 step progress 只在真实 steps/tasks 存在后渲染。
 - task 状态必须通过文本或语义符号表达，不能只靠颜色。
+- task 行首状态 icon 已表达状态时，不得在 task 标题下方重复展示可见状态 label；如移除可见 label，仍必须保留可访问性所需的状态文本或语义标签。
 - 状态变化必须局部更新，不得重排整个列表。
 
 可访问性：
@@ -981,6 +956,15 @@ UI 是公安指挥工作流的高密度操作控制台，不是营销页。
 - 默认日志不写入 streaming `message_update`、`message_start`、`tool_execution_update` 结构。
 - runtime 自生成 ID 和持久化文件名使用 UUID，不拼接 task id 或长 agent run id。
 - “测试”按钮使用公安 workflow JSON 和当前指令输入框内容触发 `/runs/start`。
+- 初始 `PLAN_STEPS` / idle snapshot 为空，测试按钮和验收脚本显式传入公安 workflow 后才出现流程 steps。
+- 初始消息区为空白，不渲染等待后端回执占位消息。
+- 初始流程指引不渲染 `0 / 0` 等伪进度；测试按钮和验收脚本显式传入公安 workflow 后才显示真实 progress counts。
+- 浏览器主操作按钮在 start/stop 两种语义间切换，不保留分离的开始和停止按钮。
+- 浏览器顶部右上角运行操作区提供显式重置按钮，与“测试”按钮并列；点击后通过 `/runs/reset` 清空当前 run 状态、卡片工作区、系统回执和 task conversation messages，并让当前任务摘要回到 `暂无任务`、卡片网格回到 `暂无业务卡片`，刷新页面不作为重置动作。
+- 智能协同侧栏可保留“智能协同 / 历史 / 待办”tabs 外壳；本轮第一版 POC 不继续打磨 tabs 交互，也不以 tabs 细化作为收口阻塞；第一版不得伪造历史会话或待办事件队列数据。
+- 流程指引中的 task 不重复展示行首 icon 已表达的可见状态 label，同时保留可访问状态语义。
+- 指令输入框随内容高度自动调整。
+- 智能协同侧栏桌面宽度增至既有宽度的 1.5 倍，同时保持窄屏无横向滚动。
 - `run-police-workflow.mjs` 使用同一默认 `userInstruction` 触发公安 workflow。
 - MCP 接入测试必须覆盖 `pi-mcp-adapter@2.8.0` 固定加载、`directTools` 启用、proxy `mcp` 禁用、metadata cache prewarm、task allowlist 多层强制和旧 demo adapter 退出 active path。
 

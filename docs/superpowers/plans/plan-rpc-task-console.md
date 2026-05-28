@@ -917,7 +917,7 @@ npx tsx ../../node_modules/vitest/dist/cli.js --run test/rpc-task-console.test.t
 
 **目标：** UI 对齐 reference：卡片只来自 task result，智能协同消息来自 runtime receipts 和 task conversation messages。
 
-第一版不实现独立的 workflow 选择/编辑模型。`/runs/start` 和 `/runs/replace` 直接使用当前 workflow steps 作为 selected steps；`/runs/reset` 若未显式携带 `steps`，也回到当前 workflow steps 的 idle snapshot。
+第一版不实现独立的 workflow 选择/编辑模型。`/runs/start`、`/runs/replace`、“测试”按钮和验收脚本显式传入的 `steps` 才成为当前 selected steps；`/runs/reset` 若未显式携带 `steps`，回到当前 selected steps 的 idle snapshot，没有 current selected steps 时保持空 `steps`。Task 10 Step 11 负责补齐冷启动空 `PLAN_STEPS` 的人工验收反馈。
 
 **文件：**
 
@@ -939,7 +939,7 @@ npx tsx ../../node_modules/vitest/dist/cli.js --run test/rpc-task-console.test.t
 页面结构必须包含顶部标题栏，并展示产品名称“公安指挥任务控制台”。
 
 `server.ts` 必须改为服务真实 `index.html`、`styles.css` 和 `app.js` 文件，不再从 `index.html` 正则拆分内联资源。
-`/runs/reset` 空 body 时必须保持当前 workflow steps，不得回退到别的默认 workflow。
+`/runs/reset` 空 body 时必须保持当前 selected steps；如果当前没有 selected steps，则保持空 `steps`，不得回退到别的默认 workflow。
 
 - [x] **Step 2: 移除硬编码业务卡片**
 
@@ -1041,6 +1041,7 @@ Media card 使用 `gbids` 等引用数据，不请求后端视频 bytes。
 - 修改：`packages/coding-agent/examples/rpc-task-console/child-agent-process.ts`
 - 修改：`packages/coding-agent/examples/rpc-task-console/persistence.ts`
 - 修改：`packages/coding-agent/examples/rpc-task-console/types.ts`
+- 修改：`packages/coding-agent/examples/rpc-task-console/tasks.ts`
 - 修改：`packages/coding-agent/examples/rpc-task-console/index.html`
 - 修改：`packages/coding-agent/examples/rpc-task-console/app.js`
 - 修改：`packages/coding-agent/examples/rpc-task-console/styles.css`
@@ -1205,7 +1206,6 @@ node docs/superpowers/plans/run-police-workflow.mjs
 
 - demo server 可启动。
 - 初始 HTTP shell 可返回真实 `index.html` / `styles.css` / `app.js`。
-- 初始 snapshot 为 idle，包含当前 workflow 的 steps/tasks，cards/logs/receipts/conversationMessages 为空。
 - LLM `/v1/models` endpoint 可达。
 - MCP endpoint 可建立连接，且 server 启动阶段 prewarm 成功。
 - 公安 workflow 可触发真实 child Pi process。
@@ -1236,7 +1236,7 @@ node docs/superpowers/plans/run-police-workflow.mjs
 - 如果 assistant 最终文本存在但不是合法 `{ content, data? }`，仍必须记录 validation error，并按 retry/final fail 语义处理。
 - 补充回归测试覆盖：工具调用中间 `message_end` 不产生 validation_error log，后续最终文本可正常完成；只有 tool call 且 agent_end 时仍失败。
 
-- [ ] **Step 10: runtime 控制、持久化和浏览器人工验收**
+- [x] **Step 10: runtime 控制、持久化和浏览器人工验收**
 
 必须确认：
 
@@ -1249,6 +1249,12 @@ node docs/superpowers/plans/run-police-workflow.mjs
 - 卡片收起、展开、最大化、恢复符合 spec。
 - 最大化卡片不覆盖智能协同侧栏。
 - 智能协同侧栏左右吸附、对应方向展开和 rail 拖拽符合 spec。
+- 冷启动 `PLAN_STEPS` / idle snapshot 为空，点击“测试”后才加载公安 workflow steps。
+- 初始对话区域为空白，不显示“等待后端回执。”占位消息。
+- 初始流程指引不显示 `0 / 0` 等伪进度；点击“测试”加载公安 workflow steps 后才显示真实 progress counts。
+- 开始和停止是同一个主操作按钮，状态切换符合当前 run status。
+- 指令输入框高度随输入内容自适应。
+- 对话区域和预案指引所在侧栏的桌面宽度约为原宽度 1.5 倍，同时 375px 移动端仍无横向滚动。
 - 卡片工作区按可用空间优先 3 列，空间不足时降为 2 列或 1 列。
 - 375px 左右移动端宽度无横向滚动。
 - 状态文本、aria-live、alert、focus ring、reduced-motion 等可访问性要求仍符合 spec。
@@ -1271,7 +1277,80 @@ rg -n "tool_execution_start|tool_execution_end|failed: terminated|jcj-get-case-d
 tail -n 80 logs/logs/<run-uuid>.jsonl
 ```
 
-- [ ] **Step 11: Gate 5 最终收口**
+- [x] **Step 11: 前端人工验收修正补充**
+
+本步骤来自 Task 10 浏览器人工验收发现，属于第一版 UI 验收补缺，不改变 runtime 执行语义。
+
+写入范围：
+
+- `packages/coding-agent/examples/rpc-task-console/tasks.ts`
+- `packages/coding-agent/examples/rpc-task-console/index.html`
+- `packages/coding-agent/examples/rpc-task-console/app.js`
+- `packages/coding-agent/examples/rpc-task-console/styles.css`
+- `packages/coding-agent/test/rpc-task-console.test.ts`
+
+要求：
+
+- `PLAN_STEPS` 初始化为空数组；冷启动 idle snapshot 和流程指引不显示旧 2 step / 5 task fixture。
+- 初始对话区域为空白，删除“等待后端回执。”占位 DOM 和渲染 fallback。
+- 初始流程指引不显示 `0 / 0` 等伪进度；总进度和 step progress 只基于真实 snapshot steps/tasks 渲染。
+- 合并开始按钮和停止按钮为一个主操作按钮；idle/complete/fail/stopped 时执行 start，running 时执行 stop，stopping/request pending 时 disabled。
+- 指令输入框根据文本内容自动高度适配，并设置最大高度和内部滚动。
+- 智能协同侧栏桌面宽度从当前 `--side-width: min(380px, 40vw)` 调整为约 1.5 倍；移动端仍需受视口约束并保持无横向滚动。
+- 保留 Descartes 已修复的 rail 左右拖拽吸附能力，并补充或更新测试防止回归。
+- 更新 UI/静态测试覆盖以上行为。
+
+运行：
+
+```bash
+cd packages/coding-agent
+npx tsx ../../node_modules/vitest/dist/cli.js --run test/rpc-task-console.test.ts
+```
+
+代码修改完成后：
+
+```bash
+npm run check
+```
+
+- [x] **Step 12: 增加前端重置按钮和侧栏 UI 补缺**
+
+本步骤来自浏览器人工复验发现：刷新页面会重连后端并保留当前 run snapshot，这符合持久化和 SSE 语义，但 UI 缺少显式重置入口。用户同时补充侧栏上半区 tabs 和流程指引 task 状态展示精简要求。
+
+写入范围：
+
+- `packages/coding-agent/examples/rpc-task-console/index.html`
+- `packages/coding-agent/examples/rpc-task-console/app.js`
+- `packages/coding-agent/examples/rpc-task-console/styles.css`
+- `packages/coding-agent/test/rpc-task-console.test.ts`
+
+要求：
+
+- 在浏览器顶部右上角运行操作区增加显式重置按钮，与“测试”按钮并列，并调用 canonical `/runs/reset` route。
+- 重置后回到 idle snapshot，并清空当前 run 的任务状态、卡片工作区、系统回执和 task conversation messages。
+- 重置后的卡片工作区必须恢复初始空态：`data-selected-task` 显示 `暂无任务`，卡片网格显示 `暂无业务卡片`，并清除旧 task selection 和旧 card collapsed/maximized 等本地 UI 状态；即使 reset 后保留 selected workflow 的 idle steps，也不得自动选中第一个 idle/loading task。
+- 如果当前存在 selected workflow，reset 后保留 selected workflow 的 idle steps；如果没有 selected workflow，保持空 `steps`。
+- 重置按钮不得替代开始/停止单主按钮，也不得改变 `/runs/start`、`/runs/stop`、`/runs/replace` 的 runtime 语义。
+- 运行中或请求处理中要有明确禁用/防重入策略，避免 reset 与 start/stop 请求并发造成 UI 状态错乱。
+- 智能协同侧栏可保留“智能协同 / 历史 / 待办”tabs 外壳；本轮第一版 POC 不继续打磨 tabs 交互，也不以 tabs 细化作为收口阻塞。
+- 第一版没有真实历史会话和上游待办事件数据源；“历史”和“待办”tab 不得伪造数据，可只展示空态或已有 runtime 可证明的数据。待办事件队列的真实串行/进行中/等待语义记录在后续阶段 spec。
+- 流程指引中每个 task 的行首 icon 已表达状态时，移除 task 标题下方重复可见状态 label；仍需保留可访问性所需的状态文本或语义标签，状态不能只靠颜色。
+- 更新 UI/静态测试或 HTTP 测试覆盖重置按钮位置、`/runs/reset` 调用契约、卡片区 reset 初始空态、侧栏 tabs 不伪造数据和 task 重复状态 label 移除。
+
+运行：
+
+```bash
+cd packages/coding-agent
+npx tsx ../../node_modules/vitest/dist/cli.js --run test/rpc-task-console.test.ts
+```
+
+代码修改完成后：
+
+```bash
+npm run check
+```
+
+- [ ] **Step 13: Gate 5 最终收口**
 
 运行：
 
