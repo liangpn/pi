@@ -14,11 +14,12 @@
   --amber: #e9a63a;
   --neutral: #8da1ba;
   --focus: #9ed0ff;
-  --side-width: min(380px, 40vw);
+  --side-width: min(570px, 56vw);
   --topbar-height: 58px;
   --card-height: 360px;
   --card-columns: 3;
   --rail-top: calc(var(--topbar-height) + 18px);
+  --rail-drag-x: 0px;
   --shadow: 0 18px 60px rgba(0, 0, 0, 0.35);
 }
 
@@ -336,6 +337,10 @@ body.control-edge-left .card-workspace {
   color: #fff;
 }
 
+.main-action {
+  min-width: 76px;
+}
+
 .card-body {
   min-height: 0;
   overflow: auto;
@@ -483,7 +488,7 @@ body.control-collapsed .side-panel {
 
 .control-full {
   display: grid;
-  grid-template-rows: minmax(0, 1fr) minmax(0, 1fr);
+  grid-template-rows: auto minmax(0, 1fr);
   gap: 8px;
   min-width: 0;
   min-height: 0;
@@ -507,8 +512,21 @@ body.control-collapsed .control-full {
   padding: 9px 7px;
   background: rgba(9, 21, 38, 0.94);
   box-shadow: var(--shadow);
+  transform: translate3d(var(--rail-drag-x), 0, 0);
+  transition:
+    transform 120ms ease,
+    border-color 120ms ease,
+    box-shadow 120ms ease;
+  will-change: top, transform;
+  cursor: grab;
   user-select: none;
   touch-action: none;
+}
+
+.control-rail.dragging {
+  border-color: #59bbff;
+  box-shadow: 0 22px 72px rgba(0, 0, 0, 0.42);
+  cursor: grabbing;
 }
 
 body.control-edge-left .control-rail {
@@ -566,6 +584,84 @@ body.control-collapsed .control-rail {
   grid-template-rows: minmax(0, 1fr);
 }
 
+.sidebar-tabs-head {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: end;
+  min-width: 0;
+}
+
+.sidebar-tabs-head .btn.icon {
+  width: 36px;
+  min-height: 34px;
+  margin-bottom: 1px;
+}
+
+.sidebar-tab-panels,
+.tab-panel {
+  min-width: 0;
+  min-height: 0;
+}
+
+.sidebar-tab-panels {
+  display: grid;
+}
+
+.tab-list,
+.composer-actions {
+  display: grid;
+  gap: 8px;
+}
+
+.tab-list {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.tab-button {
+  min-height: 34px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 0 8px;
+  background: #0c1a2c;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.tab-button.active,
+.tab-button[aria-selected="true"] {
+  border-color: #426386;
+  background: #0f2137;
+  color: var(--text);
+}
+
+.tab-panel {
+  height: 100%;
+}
+
+.smart-sidebar {
+  display: grid;
+  grid-template-rows: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 8px;
+}
+
+.tab-panel-empty .scroll-area {
+  height: 100%;
+  padding: 12px;
+}
+
+.sidebar-empty-state {
+  display: grid;
+  place-items: center;
+  min-height: 160px;
+  border: 1px dashed #34516e;
+  border-radius: 8px;
+  color: var(--muted);
+  background: #091625;
+  font-size: 13px;
+}
+
 .messages {
   display: grid;
   align-content: start;
@@ -617,13 +713,19 @@ body.control-collapsed .control-rail {
   align-items: flex-start;
 }
 
+.composer-actions {
+  width: 76px;
+  flex: none;
+}
+
 .composer textarea {
   flex: 1;
   width: 100%;
   height: 38px;
   min-height: 38px;
-  max-height: 86px;
+  max-height: 144px;
   resize: none;
+  overflow-y: auto;
   border: 1px solid var(--line);
   border-radius: 8px;
   padding: 8px 10px 7px;
@@ -636,6 +738,11 @@ body.control-collapsed .control-rail {
   width: 38px;
   min-width: 38px;
   height: 38px;
+  min-height: 38px;
+}
+
+.composer-actions .btn {
+  width: 100%;
   min-height: 38px;
 }
 
@@ -667,8 +774,7 @@ body.control-collapsed .control-rail {
   line-height: 1.35;
 }
 
-.phase-row p,
-.flow-row p {
+.phase-row p {
   margin-top: 4px;
   color: var(--muted);
   font-size: 12px;
@@ -697,6 +803,18 @@ body.control-collapsed .control-rail {
 
 .flow-row:last-child {
   border-bottom: 0;
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
 }
 
 .flow-row.selected {
@@ -820,5 +938,14 @@ body.control-collapsed .control-rail {
 
   .card-board {
     padding: 10px;
+  }
+
+  .composer-line {
+    flex-wrap: wrap;
+  }
+
+  .composer-actions {
+    width: 100%;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }

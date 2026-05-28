@@ -8,8 +8,9 @@ const elements = {
   runStatus: document.querySelector("[data-run-status]"),
   runStatusText: document.querySelector("[data-run-status-text]"),
   instruction: document.querySelector("[data-instruction]"),
-  stop: document.querySelector("[data-stop]"),
-  submit: document.querySelector("[data-submit]"),
+  mainAction: document.querySelector("[data-main-action]"),
+  mainActionText: document.querySelector("[data-main-action-text]"),
+  resetRun: document.querySelector("[data-reset-run]"),
   testRun: document.querySelector("[data-test-run]"),
   composer: document.querySelector("[data-composer]"),
   rail: document.querySelector("[data-rail]"),
@@ -39,10 +40,12 @@ const cardUiState = new Map();
 let latestSnapshot;
 let selectedTaskId;
 let requestPending = false;
+let activeSidebarTab = "smart";
 let policeWorkflowConfig;
 let policeWorkflowPromise;
 
 setupControlPanel();
+setupSidebarTabs();
 setupComposer();
 setupCardColumns();
 connectEvents();
@@ -64,43 +67,93 @@ function setupControlPanel() {
     return;
   }
 
-  let dragOffsetY = 0;
-  let startX = 0;
-  let startY = 0;
+  let railDrag;
+
+  const clampRailTop = (nextTop) => {
+    const minTop = 70;
+    const maxTop = Math.max(minTop, window.innerHeight - elements.rail.offsetHeight - 18);
+    return Math.max(minTop, Math.min(maxTop, nextTop));
+  };
+
+  const commitRailEdge = (clientX) => {
+    const dockLeft = clientX < window.innerWidth / 2;
+    document.body.classList.toggle("control-edge-left", dockLeft);
+    document.body.classList.toggle("control-edge-right", !dockLeft);
+  };
+
+  const clearRailDrag = () => {
+    railDrag = undefined;
+    elements.rail.classList.remove("dragging");
+    document.documentElement.style.removeProperty("--rail-drag-x");
+  };
 
   elements.rail.addEventListener("pointerdown", (event) => {
+    if (event.button !== 0) {
+      return;
+    }
     elements.rail.setPointerCapture(event.pointerId);
     elements.rail.dataset.dragged = "false";
-    startX = event.clientX;
-    startY = event.clientY;
-    dragOffsetY = event.clientY - elements.rail.getBoundingClientRect().top;
+    railDrag = {
+      pointerId: event.pointerId,
+      startX: event.clientX,
+      startY: event.clientY,
+      dragOffsetY: event.clientY - elements.rail.getBoundingClientRect().top,
+    };
+    elements.rail.classList.add("dragging");
+    document.documentElement.style.setProperty("--rail-drag-x", "0px");
   });
 
   elements.rail.addEventListener("pointermove", (event) => {
-    if (!elements.rail.hasPointerCapture(event.pointerId)) {
+    if (!railDrag || railDrag.pointerId !== event.pointerId || !elements.rail.hasPointerCapture(event.pointerId)) {
       return;
     }
-    const minTop = 70;
-    const maxTop = window.innerHeight - elements.rail.offsetHeight - 18;
-    const nextTop = Math.max(minTop, Math.min(maxTop, event.clientY - dragOffsetY));
-    if (Math.abs(event.clientY - startY) > 3 || Math.abs(event.clientX - startX) > 8) {
+    const nextTop = clampRailTop(event.clientY - railDrag.dragOffsetY);
+    const dragX = event.clientX - railDrag.startX;
+    if (Math.abs(event.clientY - railDrag.startY) > 3 || Math.abs(event.clientX - railDrag.startX) > 8) {
       elements.rail.dataset.dragged = "true";
     }
     document.documentElement.style.setProperty("--rail-top", `${nextTop}px`);
+    document.documentElement.style.setProperty("--rail-drag-x", `${dragX}px`);
   });
 
-  elements.rail.addEventListener("pointerup", (event) => {
-    if (Math.abs(event.clientX - startX) <= 8) {
+  const finishRailDrag = (event, shouldCommitEdge) => {
+    if (!railDrag || railDrag.pointerId !== event.pointerId) {
       return;
     }
-    document.body.classList.toggle("control-edge-left", event.clientX < window.innerWidth / 2);
-    document.body.classList.toggle("control-edge-right", event.clientX >= window.innerWidth / 2);
+    if (shouldCommitEdge && Math.abs(event.clientX - railDrag.startX) > 8) {
+      commitRailEdge(event.clientX);
+    }
+    clearRailDrag();
+    if (elements.rail.hasPointerCapture(event.pointerId)) {
+      elements.rail.releasePointerCapture(event.pointerId);
+    }
+  };
+
+  elements.rail.addEventListener("pointerup", (event) => {
+    finishRailDrag(event, true);
+  });
+
+  elements.rail.addEventListener("pointercancel", (event) => {
+    finishRailDrag(event, false);
+  });
+
+  elements.rail.addEventListener("lostpointercapture", (event) => {
+    if (railDrag?.pointerId === event.pointerId) {
+      clearRailDrag();
+    }
   });
 }
 
 function setupComposer() {
   if (window.matchMedia("(max-width: 760px)").matches) {
     document.body.classList.add("control-collapsed");
+  }
+
+  if (elements.instruction instanceof HTMLTextAreaElement) {
+    elements.instruction.addEventListener("input", () => {
+      syncInstructionHeight();
+    });
+    syncInstructionHeight();
   }
 
   if (elements.composer instanceof HTMLFormElement) {
@@ -110,17 +163,13 @@ function setupComposer() {
       if (!latestSnapshot || instruction.length === 0 || requestPending) {
         return;
       }
-      const runPath = latestSnapshot.run.status === "idle" ? "/runs/start" : "/runs/replace";
-      void postRun(runPath, instruction);
+      void postPrimaryAction(instruction);
     });
   }
 
-  if (elements.stop instanceof HTMLButtonElement) {
-    elements.stop.addEventListener("click", () => {
-      if (requestPending) {
-        return;
-      }
-      void postStop();
+  if (elements.resetRun instanceof HTMLButtonElement) {
+    elements.resetRun.addEventListener("click", () => {
+      void postReset();
     });
   }
 
@@ -145,6 +194,57 @@ function setupComposer() {
   });
 }
 
+function setupSidebarTabs() {
+  if (!(elements.messages instanceof HTMLElement) || !(elements.composer instanceof HTMLFormElement)) {
+    return;
+  }
+
+  for (const button of document.querySelectorAll("[data-sidebar-tab]")) {
+    button.addEventListener("click", () => {
+      if (!(button instanceof HTMLButtonElement)) {
+        return;
+      }
+      activeSidebarTab = button.dataset.sidebarTab === "history" || button.dataset.sidebarTab === "todo"
+        ? button.dataset.sidebarTab
+        : "smart";
+      renderSidebarTabs();
+    });
+  }
+
+  renderSidebarTabs();
+}
+
+function renderSidebarTabs() {
+  const selectedTab = activeSidebarTab === "history" || activeSidebarTab === "todo" ? activeSidebarTab : "smart";
+  for (const button of document.querySelectorAll("[data-sidebar-tab]")) {
+    if (!(button instanceof HTMLButtonElement)) {
+      continue;
+    }
+    const isActive = button.dataset.sidebarTab === selectedTab;
+    button.classList.toggle("active", isActive);
+    button.setAttribute("aria-selected", isActive ? "true" : "false");
+    button.tabIndex = isActive ? 0 : -1;
+  }
+
+  for (const panel of document.querySelectorAll("[data-tab-panel]")) {
+    if (!(panel instanceof HTMLElement)) {
+      continue;
+    }
+    panel.hidden = panel.dataset.tabPanel !== selectedTab;
+  }
+}
+
+function syncInstructionHeight() {
+  if (!(elements.instruction instanceof HTMLTextAreaElement)) {
+    return;
+  }
+  elements.instruction.style.height = "auto";
+  const maxHeight = Number.parseFloat(window.getComputedStyle(elements.instruction).maxHeight) || 144;
+  const nextHeight = Math.min(elements.instruction.scrollHeight, maxHeight);
+  elements.instruction.style.height = `${Math.max(nextHeight, 38)}px`;
+  elements.instruction.style.overflowY = elements.instruction.scrollHeight > maxHeight ? "auto" : "hidden";
+}
+
 function setupCardColumns() {
   if (!(elements.cardBoard instanceof HTMLElement)) {
     return;
@@ -155,6 +255,15 @@ function setupCardColumns() {
     document.documentElement.style.setProperty("--card-columns", String(columns));
   });
   resizeObserver.observe(elements.cardBoard);
+}
+
+async function postPrimaryAction(instruction) {
+  const status = latestSnapshot?.run.status ?? "idle";
+  if (status === "running") {
+    await postStop();
+    return;
+  }
+  await postRun("/runs/start", instruction);
 }
 
 async function postRun(path, instruction) {
@@ -198,6 +307,24 @@ async function postStop() {
   }
 }
 
+async function postReset() {
+  const status = latestSnapshot?.run.status ?? "idle";
+  if (!latestSnapshot || requestPending || status === "running" || status === "stopping") {
+    return;
+  }
+  setRequestPending(true);
+  try {
+    const response = await fetch("/runs/reset", { method: "POST" });
+    if (!response.ok) {
+      renderLocalError(`重置失败：${response.status}`);
+    }
+  } catch (error) {
+    renderLocalError(error instanceof Error ? error.message : String(error));
+  } finally {
+    setRequestPending(false);
+  }
+}
+
 async function performRunRequest(path, payload) {
   const response = await fetch(path, {
     method: "POST",
@@ -214,6 +341,7 @@ async function initializePoliceWorkflow() {
     const workflow = await loadPoliceWorkflowConfig();
     if (elements.instruction instanceof HTMLTextAreaElement && elements.instruction.value.trim().length === 0) {
       elements.instruction.value = workflow.defaultUserInstruction;
+      syncInstructionHeight();
     }
   } catch (error) {
     renderLocalError(error instanceof Error ? error.message : String(error));
@@ -261,12 +389,19 @@ function connectEvents() {
 
 function renderSnapshot(snapshot) {
   latestSnapshot = snapshot;
-  updateSelectedTask(snapshot.run.steps);
+  if (isResetIdleSnapshot(snapshot)) {
+    selectedTaskId = undefined;
+  }
+  updateSelectedTask(snapshot.run);
   renderRunStatus(snapshot.run.status);
   renderMessages(snapshot);
   renderFlow(snapshot.run.steps);
   renderCards(snapshot.cards);
   updateActionState();
+}
+
+function isResetIdleSnapshot(snapshot) {
+  return snapshot.run.status === "idle" && (!Array.isArray(snapshot.cards) || snapshot.cards.length === 0);
 }
 
 function renderRunStatus(status) {
@@ -307,21 +442,19 @@ function renderMessages(snapshot) {
     fragment.append(node);
   }
 
-  if (fragment.childNodes.length === 0) {
-    const empty = document.createElement("article");
-    empty.className = "message system empty-message";
-    empty.innerHTML = "<p>等待后端回执。</p>";
-    fragment.append(empty);
-  }
-
+  const hasEntries = fragment.childNodes.length > 0;
   elements.messages.replaceChildren(fragment);
-  elements.messages.scrollTop = elements.messages.scrollHeight;
+  if (hasEntries) {
+    elements.messages.scrollTop = elements.messages.scrollHeight;
+  }
 }
 
 function renderLocalError(message) {
   if (!(elements.messages instanceof HTMLElement)) {
     return;
   }
+  activeSidebarTab = "smart";
+  renderSidebarTabs();
   const node = document.createElement("article");
   node.className = "message system error";
   node.setAttribute("role", "alert");
@@ -338,8 +471,14 @@ function renderFlow(steps) {
   const allTasks = steps.flatMap((step) => step.tasks);
   const doneTasks = allTasks.filter((task) => task.status === "complete").length;
   if (elements.totalProgress instanceof HTMLElement) {
-    elements.totalProgress.textContent = `${doneTasks} / ${allTasks.length}`;
-    elements.totalProgress.title = `已完成 ${doneTasks} 个，共 ${allTasks.length} 个`;
+    elements.totalProgress.hidden = !(allTasks.length > 0);
+    if (allTasks.length > 0) {
+      elements.totalProgress.textContent = `${doneTasks} / ${allTasks.length}`;
+      elements.totalProgress.title = `已完成 ${doneTasks} 个，共 ${allTasks.length} 个`;
+    } else {
+      elements.totalProgress.textContent = "";
+      elements.totalProgress.removeAttribute("title");
+    }
   }
 
   syncOrderedChildren(
@@ -422,11 +561,14 @@ function getOrCreateTaskNode(taskList, taskId) {
     <span class="flow-marker"></span>
     <div>
       <h4></h4>
-      <p></p>
+      <span class="sr-only" data-task-status></span>
     </div>
   `;
   taskNode.addEventListener("click", () => {
     selectedTaskId = taskId;
+    if (latestSnapshot) {
+      updateSelectedTask(latestSnapshot.run);
+    }
     renderFlow(latestSnapshot?.run.steps ?? []);
   });
   return taskNode;
@@ -468,15 +610,15 @@ function updateTaskNode(taskNode, task) {
   if (marker instanceof HTMLElement) {
     marker.textContent = symbol;
     marker.title = status;
-    marker.setAttribute("aria-label", status);
+    marker.setAttribute("aria-hidden", "true");
   }
   const title = taskNode.querySelector("h4");
   if (title instanceof HTMLElement) {
     title.textContent = task.title;
   }
-  const text = taskNode.querySelector("p");
+  const text = taskNode.querySelector("[data-task-status]");
   if (text instanceof HTMLElement) {
-    text.textContent = status;
+    text.textContent = `状态：${status}`;
   }
 }
 
@@ -485,6 +627,7 @@ function renderCards(cards) {
     return;
   }
   if (!Array.isArray(cards) || cards.length === 0) {
+    cardUiState.clear();
     elements.cardGrid.innerHTML = '<div class="empty-state" data-empty-state>暂无业务卡片</div>';
     return;
   }
@@ -617,14 +760,15 @@ function readCardState(cardId) {
   return cardUiState.get(cardId) ?? { collapsed: false, maximized: false };
 }
 
-function updateSelectedTask(steps) {
+function updateSelectedTask(run) {
+  const steps = run.steps;
   const tasks = steps.flatMap((step) => step.tasks);
   const current = tasks.find((task) => task.id === selectedTaskId);
   if (!current) {
     selectedTaskId =
-      tasks.find((task) => task.status === "running")?.id ??
-      tasks.find((task) => task.status === "loading")?.id ??
-      tasks[0]?.id;
+      run.status === "running" || run.status === "stopping"
+        ? tasks.find((task) => task.status === "running")?.id ?? tasks.find((task) => task.status === "loading")?.id
+        : undefined;
   }
   const selected = tasks.find((task) => task.id === selectedTaskId);
   if (elements.selectedTask instanceof HTMLElement) {
@@ -642,12 +786,21 @@ function updateSelectedTask(steps) {
 function updateActionState() {
   const status = latestSnapshot?.run.status ?? "idle";
   const hasSnapshot = Boolean(latestSnapshot);
-  const isRunning = status === "running" || status === "stopping";
-  if (elements.submit instanceof HTMLButtonElement) {
-    elements.submit.disabled = !hasSnapshot || requestPending || status === "stopping";
+  const mode = status === "running" ? "stop" : "start";
+  if (elements.mainAction instanceof HTMLButtonElement) {
+    const disabled = !hasSnapshot || requestPending || status === "stopping";
+    const label = mode === "stop" ? "停止运行" : "开始运行";
+    elements.mainAction.disabled = disabled;
+    elements.mainAction.dataset.mode = mode;
+    elements.mainAction.classList.toggle("stop", mode === "stop");
+    elements.mainAction.title = label;
+    elements.mainAction.setAttribute("aria-label", label);
   }
-  if (elements.stop instanceof HTMLButtonElement) {
-    elements.stop.disabled = !hasSnapshot || requestPending || !isRunning || status === "stopping";
+  if (elements.mainActionText instanceof HTMLElement) {
+    elements.mainActionText.textContent = mode === "stop" ? "停止" : "开始";
+  }
+  if (elements.resetRun instanceof HTMLButtonElement) {
+    elements.resetRun.disabled = !hasSnapshot || requestPending || status === "running" || status === "stopping";
   }
   if (elements.testRun instanceof HTMLButtonElement) {
     elements.testRun.disabled = requestPending || status === "stopping";

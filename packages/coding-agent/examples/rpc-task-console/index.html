@@ -15,6 +15,9 @@
         </div>
         <div class="top-actions" aria-label="运行操作">
           <button class="btn test-trigger" type="button" data-test-run>测试</button>
+          <button class="btn" type="button" aria-label="重置运行" title="重置运行" data-reset-run disabled>
+            重置
+          </button>
           <span class="status loading" data-run-status>
             <span class="status-symbol" aria-hidden="true">○</span>
             <span data-run-status-text>未启动</span>
@@ -27,7 +30,7 @@
           <div class="selection-bar">
             <div class="selection-title">
               <h2>任务卡片</h2>
-              <p data-selected-task>等待后端快照</p>
+              <p data-selected-task>暂无任务</p>
             </div>
           </div>
           <div class="scroll-area card-board" data-card-board>
@@ -50,65 +53,130 @@
           </button>
 
           <div class="control-full">
-            <section class="pane messages-pane" aria-label="后端回执与任务消息">
-              <div class="pane-head">
-                <h2>智能协同</h2>
+            <div class="sidebar-tabs-head">
+              <div class="tab-list" role="tablist" aria-label="智能协同视图">
                 <button
-                  class="btn icon"
+                  class="tab-button"
                   type="button"
-                  data-toggle-control
-                  aria-label="收起智能协同"
-                  title="收起智能协同"
+                  role="tab"
+                  id="sidebar-tab-smart"
+                  aria-controls="sidebar-panel-smart"
+                  aria-selected="true"
+                  tabindex="0"
+                  data-sidebar-tab="smart"
                 >
-                  ›
+                  智能协同
+                </button>
+                <button
+                  class="tab-button"
+                  type="button"
+                  role="tab"
+                  id="sidebar-tab-history"
+                  aria-controls="sidebar-panel-history"
+                  aria-selected="false"
+                  tabindex="-1"
+                  data-sidebar-tab="history"
+                >
+                  历史
+                </button>
+                <button
+                  class="tab-button"
+                  type="button"
+                  role="tab"
+                  id="sidebar-tab-todo"
+                  aria-controls="sidebar-panel-todo"
+                  aria-selected="false"
+                  tabindex="-1"
+                  data-sidebar-tab="todo"
+                >
+                  待办
                 </button>
               </div>
+              <button
+                class="btn icon"
+                type="button"
+                data-toggle-control
+                aria-label="收起智能协同"
+                title="收起智能协同"
+              >
+                ›
+              </button>
+            </div>
 
-              <div class="pane-body">
-                <div class="scroll-area messages" aria-live="polite" data-messages>
-                  <article class="message system empty-message">
-                    <p>等待后端回执。</p>
-                  </article>
-                </div>
-
-                <form class="composer" data-composer>
-                  <div class="composer-line">
-                    <textarea aria-label="输入新指令" data-instruction></textarea>
-                    <button
-                      class="btn icon primary"
-                      type="submit"
-                      aria-label="发送指令"
-                      title="发送指令"
-                      data-submit
-                      disabled
-                    >
-                      ▶
-                    </button>
-                    <button
-                      class="btn icon stop"
-                      type="button"
-                      aria-label="停止运行"
-                      title="停止运行"
-                      data-stop
-                      disabled
-                    >
-                      ■
-                    </button>
+            <div class="sidebar-tab-panels">
+              <section
+                class="tab-panel smart-sidebar"
+                role="tabpanel"
+                id="sidebar-panel-smart"
+                aria-labelledby="sidebar-tab-smart"
+                data-tab-panel="smart"
+              >
+                <section class="pane messages-pane" aria-label="后端回执与任务消息">
+                  <div class="pane-head">
+                    <h2>智能协同</h2>
                   </div>
-                </form>
-              </div>
-            </section>
 
-            <section class="pane workflow-pane" aria-label="预案指引">
-              <div class="pane-head">
-                <h2>预案指引</h2>
-                <span class="phase-progress" data-total-progress>0 / 0</span>
-              </div>
+                  <div class="pane-body">
+                    <div class="scroll-area messages" aria-live="polite" data-messages></div>
 
-              <div class="pane-body only-scroll">
-                <div class="scroll-area flow-list" data-flow-list></div>
-              </div>
-            </section>
+                    <form class="composer" data-composer>
+                      <div class="composer-line">
+                        <textarea aria-label="输入新指令" data-instruction></textarea>
+                        <div class="composer-actions">
+                          <button
+                            class="btn primary main-action"
+                            type="submit"
+                            aria-label="开始运行"
+                            title="开始运行"
+                            data-main-action
+                            disabled
+                          >
+                            <span data-main-action-text>开始</span>
+                          </button>
+                        </div>
+                      </div>
+                    </form>
+                  </div>
+                </section>
+
+                <section class="pane workflow-pane" aria-label="预案指引">
+                  <div class="pane-head">
+                    <h2>预案指引</h2>
+                    <span class="phase-progress" data-total-progress hidden></span>
+                  </div>
+
+                  <div class="pane-body only-scroll">
+                    <div class="scroll-area flow-list" data-flow-list></div>
+                  </div>
+                </section>
+              </section>
+
+              <section
+                class="tab-panel tab-panel-empty"
+                role="tabpanel"
+                id="sidebar-panel-history"
+                aria-labelledby="sidebar-tab-history"
+                data-tab-panel="history"
+                hidden
+              >
+                <div class="scroll-area">
+                  <div class="sidebar-empty-state">暂无历史会话</div>
+                </div>
+              </section>
+
+              <section
+                class="tab-panel tab-panel-empty"
+                role="tabpanel"
+                id="sidebar-panel-todo"
+                aria-labelledby="sidebar-tab-todo"
+                data-tab-panel="todo"
+                hidden
+              >
+                <div class="scroll-area">
+                  <div class="sidebar-empty-state">暂无待办事件</div>
+                </div>
+              </section>
+            </div>
           </div>
         </aside>
       </div>

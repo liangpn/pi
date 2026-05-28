@@ -54,28 +54,119 @@ const PROJECT_ROOT = fileURLToPath(new URL("../../..", import.meta.url));
 const PROJECT_LOG_DIR = join(PROJECT_ROOT, "logs");
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/u;
 
+function createDemoPlanSteps(): readonly PlanStep[] {
+	return validatePlanSteps([
+		{
+			id: "step-1",
+			title: "先期处置",
+			tasks: [
+				{
+					id: "task-1",
+					title: "总结当前目录",
+					description: "请用一句话说明当前目录是什么项目。不要修改文件。",
+					tools: [],
+					skills: [],
+					card_type: "text",
+					data_structure: [{ field: "text", type: "string", required: true, description: "目录摘要文本" }],
+					demoOutcome: "normal",
+				},
+				{
+					id: "task-2",
+					title: "打开服务监控",
+					description:
+						"1、调用 @get_jw@ 获取经纬度 2、调用 @get_address@ 获取地址 3、调用 @open_camera@ 打开 service-a 监控",
+					tools: [],
+					skills: [],
+					card_type: "media",
+					data_structure: [
+						{
+							field: "gbids",
+							type: "array",
+							required: true,
+							description: "监控设备 GBID 列表",
+							items: { type: "string" },
+						},
+					],
+					demoOutcome: "normal",
+				},
+				{
+					id: "task-3",
+					title: "查询地图点位",
+					description: "模拟查询目标周边点位，返回中心点和若干 marker。",
+					tools: [],
+					skills: [],
+					card_type: "map",
+					data_structure: [
+						{
+							field: "center",
+							type: "object",
+							required: false,
+							fields: [
+								{ field: "lat", type: "number", required: true },
+								{ field: "lng", type: "number", required: true },
+							],
+						},
+						{
+							field: "markers",
+							type: "array",
+							required: true,
+							items: {
+								type: "object",
+								fields: [
+									{ field: "label", type: "string", required: true },
+									{ field: "lat", type: "number", required: true },
+									{ field: "lng", type: "number", required: true },
+									{ field: "status", type: "string", required: false },
+								],
+							},
+						},
+					],
+					demoOutcome: "normal",
+				},
+			],
+		},
+		{
+			id: "step-2",
+			title: "资源确认",
+			tasks: [
+				{
+					id: "task-4",
+					title: "拉取资源清单",
+					description: "模拟拉取可用资源清单，输出表格数据。",
+					tools: [],
+					skills: [],
+					retry: {
+						max_attempts: 2,
+						base_delay_ms: 250,
+						max_tool_calls: 3,
+						retry_on: ["process_error", "timeout"],
+					},
+					card_type: "table",
+					data_structure: [{ field: "rows", type: "array", required: true, description: "资源表格行数据" }],
+					demoOutcome: "normal",
+				},
+				{
+					id: "task-5",
+					title: "模拟失败任务",
+					description: "请尝试读取一个不存在的文件 docs/definitely-missing-demo-file.txt，并报告错误。",
+					tools: [],
+					skills: [],
+					demoOutcome: "force_fail_after_run",
+				},
+			],
+		},
+	]);
+}
+
 describe("rpc task console model", () => {
-	test("defines a full steps/tasks plan skeleton", () => {
+	test("initializes a cold-start plan with no preselected workflow steps", () => {
 		const steps = createInitialSteps();
 
-		expect(steps).toHaveLength(2);
-		expect(steps.flatMap((step) => step.tasks)).toHaveLength(5);
-		expect(steps[0]?.id).toBe("step-1");
-		expect(steps[0]?.tasks[1]?.card_type).toBe("media");
-		expect(steps[0]?.tasks[1]?.data_structure?.[0]?.field).toBe("gbids");
-		expect(steps[0]?.tasks[0]?.tools).toEqual([]);
-		expect(steps[0]?.tasks[0]?.skills).toEqual([]);
-		expect(steps[1]?.tasks[0]?.retry).toEqual({
-			max_attempts: 2,
-			base_delay_ms: 250,
-			max_tool_calls: 3,
-			retry_on: ["process_error", "timeout"],
-		});
-		expect(steps[1]?.tasks[1]?.card_type).toBeUndefined();
+		expect(steps).toEqual([]);
 	});
 
 	test("clones plan steps into runtime steps without mutating the plan", () => {
-		const planSteps = createInitialSteps();
+		const planSteps = createDemoPlanSteps();
 		const runtimeSteps = createRuntimeSteps(planSteps);
 
 		expect(runtimeSteps[0]?.status).toBe("loading");
@@ -811,7 +902,7 @@ describe("rpc task console persistence", () => {
 				childStderrDir: join(dir, "stderr"),
 				conversationDir: join(dir, "conversation"),
 			});
-			const steps = createInitialSteps();
+			const steps = createDemoPlanSteps();
 			const store = TaskStore.createIdle(steps);
 			const run = store.startRun("run-1", "demo instruction", 100);
 			store.apply({
@@ -955,19 +1046,17 @@ describe("rpc task console MCP package adapter", () => {
 });
 
 describe("rpc task console TaskStore", () => {
-	test("initializes a full steps/tasks runtime skeleton", () => {
+	test("initializes an idle runtime snapshot with no preselected workflow steps", () => {
 		const store = TaskStore.createIdle(createInitialSteps());
 		const snapshot = store.getSnapshot();
 
 		expect(snapshot.run.status).toBe("idle");
-		expect(snapshot.run.steps).toHaveLength(2);
-		expect(snapshot.run.steps.flatMap((step) => step.tasks)).toHaveLength(5);
-		expect(snapshot.run.steps[0]?.tasks[0]?.status).toBe("loading");
+		expect(snapshot.run.steps).toEqual([]);
 		expect(snapshot.conversationMessages).toEqual([]);
 	});
 
 	test("resets to an idle snapshot for the provided selected steps and clears in-memory state", () => {
-		const defaultSteps = createInitialSteps();
+		const defaultSteps = createDemoPlanSteps();
 		const replacementSteps: PlanStep[] = [
 			{
 				id: "step-selected",
@@ -1028,7 +1117,7 @@ describe("rpc task console TaskStore", () => {
 	});
 
 	test("writes task result, conversation message, receipt, and card in the same completion snapshot", () => {
-		const store = TaskStore.createIdle(createInitialSteps());
+		const store = TaskStore.createIdle(createDemoPlanSteps());
 		const run = store.startRun("run-1", "demo instruction", 100);
 		const snapshots: TaskSnapshot[] = [];
 		store.subscribe((snapshot) => {
@@ -1095,7 +1184,7 @@ describe("rpc task console TaskStore", () => {
 	});
 
 	test("keeps a completed task card when later logs arrive", () => {
-		const store = TaskStore.createIdle(createInitialSteps());
+		const store = TaskStore.createIdle(createDemoPlanSteps());
 		const run = store.startRun("run-1", "demo instruction", 100);
 
 		store.apply({
@@ -1127,7 +1216,7 @@ describe("rpc task console TaskStore", () => {
 	});
 
 	test("does not create business cards for tasks without card_type", () => {
-		const store = TaskStore.createIdle(createInitialSteps());
+		const store = TaskStore.createIdle(createDemoPlanSteps());
 		const run = store.startRun("run-1", "demo instruction", 100);
 
 		store.apply({
@@ -1153,7 +1242,7 @@ describe("rpc task console TaskStore", () => {
 	});
 
 	test("does not silently consume legacy card_data payloads", () => {
-		const store = TaskStore.createIdle(createInitialSteps());
+		const store = TaskStore.createIdle(createDemoPlanSteps());
 		const run = store.startRun("run-1", "demo instruction", 100);
 		const legacyResult = {
 			status: "complete",
@@ -1390,7 +1479,7 @@ describe("rpc task console TaskStore", () => {
 	});
 
 	test("ignores stale events from an old run", () => {
-		const store = TaskStore.createIdle(createInitialSteps());
+		const store = TaskStore.createIdle(createDemoPlanSteps());
 		store.startRun("run-1", "old", 100);
 		store.startRun("run-2", "new", 200);
 
@@ -1588,14 +1677,14 @@ function waitUntil(predicate: () => boolean): Promise<void> {
 
 describe("rpc task console TaskDispatcher", () => {
 	test("runs steps serially and tasks inside each step concurrently", async () => {
-		const store = TaskStore.createIdle(createInitialSteps());
+		const store = TaskStore.createIdle(createDemoPlanSteps());
 		const run = store.startRun("run-1", "demo", 100);
 		const startedTaskIds: string[] = [];
 		const factory = createImmediateAgentFactory(startedTaskIds);
 		const dispatcher = new TaskDispatcher({
 			runId: run.id,
 			userInstruction: run.userInstruction,
-			steps: createInitialSteps(),
+			steps: createDemoPlanSteps(),
 			store,
 			childFactory: factory,
 			command: "pi",
@@ -2902,6 +2991,7 @@ function writeDefaultRuntimeConfigFile(dir: string): string {
 describe("rpc task console RunManager", () => {
 	test("starts a run and exposes the final snapshot", async () => {
 		const manager = new RunManager({
+			steps: createDemoPlanSteps(),
 			demoEnv: createDemoEnv(),
 			childFactory: createImmediateAgentFactory([]),
 			now: createClock(100),
@@ -3266,7 +3356,7 @@ describe("rpc task console RunManager", () => {
 		];
 		const children: FakeChildAgentProcess[] = [];
 		const manager = new RunManager({
-			steps: createInitialSteps(),
+			steps: createDemoPlanSteps(),
 			demoEnv: createDemoEnv(undefined, {
 				runtimeConfig: {
 					...DEFAULT_RUNTIME_CONFIG,
@@ -3626,23 +3716,64 @@ describe("rpc task console frontend static contracts", () => {
 		expect(renderMessages).toContain("snapshot.conversationMessages ?? []");
 		expect(renderMessages).toContain("resolveTaskTitle(snapshot.run.steps, message.taskId)");
 		expect(renderMessages).not.toContain("userInstruction");
-		expect(html).toContain("等待后端回执。");
+		expect(html).not.toContain("等待后端回执。");
+		expect(renderMessages).not.toContain("empty-message");
 		expect(html).not.toContain("主 agent");
 		expect(html).not.toContain("free-chat");
 	});
 
-	test("keeps canonical route usage in the frontend and selected steps in run payloads", () => {
+	test("keeps canonical route usage while the primary action switches between start and stop", () => {
 		const app = readConsoleAsset("app.js");
+		const html = readConsoleAsset("index.html");
 		const setupComposer = extractFunctionSource(app, "setupComposer");
-		const postRun = extractFunctionSource(app, "postRun");
+		const postPrimaryAction = extractFunctionSource(app, "postPrimaryAction");
 		const postStop = extractFunctionSource(app, "postStop");
+		const postReset = extractFunctionSource(app, "postReset");
+		const updateActionState = extractFunctionSource(app, "updateActionState");
+		const topActionsStart = html.indexOf('class="top-actions"');
+		const sidePanelStart = html.indexOf('class="side-panel"');
 
-		expect(setupComposer).toContain('"/runs/start"');
-		expect(setupComposer).toContain('"/runs/replace"');
-		expect(postRun).toContain("getSelectedStepsPayload()");
-		expect(postRun).toContain("userInstruction: instruction");
+		expect(html).toContain("data-main-action");
+		expect(html).toContain("data-reset-run");
+		expect(topActionsStart).toBeGreaterThan(-1);
+		expect(sidePanelStart).toBeGreaterThan(topActionsStart);
+		expect(html.indexOf("data-reset-run")).toBeLessThan(sidePanelStart);
+		expect(html.indexOf("data-test-run")).toBeLessThan(html.indexOf("data-reset-run"));
+		expect(html).not.toContain("data-stop");
+		expect(html).not.toContain("data-submit");
+		expect(setupComposer).toContain("postPrimaryAction");
+		expect(setupComposer).toContain("postReset()");
+		expect(postPrimaryAction).toContain('status === "running"');
+		expect(postPrimaryAction).toContain('"/runs/start"');
+		expect(postPrimaryAction).not.toContain('"/runs/replace"');
+		expect(postPrimaryAction).toContain("getSelectedStepsPayload()");
+		expect(postPrimaryAction).toContain("userInstruction: instruction");
 		expect(postStop).toContain('fetch("/runs/stop"');
+		expect(postReset).toContain('fetch("/runs/reset", { method: "POST" })');
+		expect(updateActionState).toContain("elements.mainAction.disabled");
+		expect(updateActionState).toContain("elements.resetRun.disabled");
+		expect(updateActionState).toContain('status === "running"');
+		expect(updateActionState).toContain('status === "stopping"');
 		expect(app).not.toContain("/api/");
+	});
+
+	test("renders reset snapshots back to an empty card workspace", () => {
+		const app = readConsoleAsset("app.js");
+		const renderSnapshot = extractFunctionSource(app, "renderSnapshot");
+		const renderCards = extractFunctionSource(app, "renderCards");
+		const updateSelectedTask = extractFunctionSource(app, "updateSelectedTask");
+		const getOrCreateTaskNode = extractFunctionSource(app, "getOrCreateTaskNode");
+
+		expect(renderSnapshot).toContain("isResetIdleSnapshot(snapshot)");
+		expect(renderSnapshot).toContain("selectedTaskId = undefined");
+		expect(renderSnapshot).toContain("updateSelectedTask(snapshot.run)");
+		expect(renderSnapshot).toContain("renderCards(snapshot.cards)");
+		expect(updateSelectedTask).toContain('run.status === "running" || run.status === "stopping"');
+		expect(updateSelectedTask).not.toContain("tasks[0]?.id");
+		expect(getOrCreateTaskNode).toContain("updateSelectedTask(latestSnapshot.run)");
+		expect(renderCards).toContain("cards.length === 0");
+		expect(renderCards).toContain("cardUiState.clear()");
+		expect(renderCards).toContain("data-empty-state>暂无业务卡片");
 	});
 
 	test("renders all first-version card types, including media GBID references", () => {
@@ -3661,46 +3792,98 @@ describe("rpc task console frontend static contracts", () => {
 
 	test("updates selected task and workflow row status text, title, and accessibility metadata", () => {
 		const app = readConsoleAsset("app.js");
+		const css = readConsoleAsset("styles.css");
 		const updateSelectedTask = extractFunctionSource(app, "updateSelectedTask");
+		const getOrCreateTaskNode = extractFunctionSource(app, "getOrCreateTaskNode");
 		const updateTaskNode = extractFunctionSource(app, "updateTaskNode");
 
 		expect(updateSelectedTask).toContain("statusText[selected.status]");
 		expect(updateSelectedTask).toContain("elements.selectedTask.textContent");
 		expect(updateSelectedTask).toContain("elements.selectedTask.title");
 		expect(updateSelectedTask).toContain('setAttribute(\n      "aria-label"');
+		expect(getOrCreateTaskNode).toContain("data-task-status");
+		expect(getOrCreateTaskNode).not.toContain("<p>");
 		expect(updateTaskNode).toContain("taskNode.title");
 		expect(updateTaskNode).toContain('taskNode.setAttribute("aria-label"');
 		expect(updateTaskNode).toContain('taskNode.setAttribute("aria-current"');
-		expect(updateTaskNode).toContain("text.textContent = status");
+		expect(updateTaskNode).toContain('marker.setAttribute("aria-hidden", "true")');
+		expect(updateTaskNode).toContain('const text = taskNode.querySelector("[data-task-status]")');
+		expect(updateTaskNode).toContain("text.textContent = `状态：");
+		expect(css).toContain(".sr-only");
 	});
 
-	test("shows workflow progress counts and click-selected tasks from backend snapshot data", () => {
+	test("uses sidebar-level collaboration tabs for smart content, history, and todo without faking data", () => {
 		const app = readConsoleAsset("app.js");
+		const html = readConsoleAsset("index.html");
+		const css = readConsoleAsset("styles.css");
+		const setupSidebarTabs = extractFunctionSource(app, "setupSidebarTabs");
+		const renderSidebarTabs = extractFunctionSource(app, "renderSidebarTabs");
+		const controlFullStart = html.indexOf('class="control-full"');
+		const tabListStart = html.indexOf('class="tab-list"');
+		const smartPanelStart = html.indexOf('data-tab-panel="smart"');
+		const historyPanelStart = html.indexOf('data-tab-panel="history"');
+
+		expect(html).toContain('role="tablist"');
+		expect(html).toContain('data-sidebar-tab="smart"');
+		expect(html).toContain('data-sidebar-tab="history"');
+		expect(html).toContain('data-sidebar-tab="todo"');
+		expect(html).toContain('data-tab-panel="smart"');
+		expect(html).toContain('data-tab-panel="history"');
+		expect(html).toContain('data-tab-panel="todo"');
+		expect(html).toContain("暂无历史会话");
+		expect(html).toContain("暂无待办事件");
+		expect(controlFullStart).toBeGreaterThan(-1);
+		expect(tabListStart).toBeGreaterThan(controlFullStart);
+		expect(smartPanelStart).toBeGreaterThan(tabListStart);
+		expect(historyPanelStart).toBeGreaterThan(smartPanelStart);
+		expect(html.indexOf("data-messages")).toBeGreaterThan(smartPanelStart);
+		expect(html.indexOf("data-flow-list")).toBeGreaterThan(smartPanelStart);
+		expect(html.indexOf("data-flow-list")).toBeLessThan(historyPanelStart);
+		expect(setupSidebarTabs).toContain("elements.messages");
+		expect(setupSidebarTabs).toContain("elements.composer");
+		expect(renderSidebarTabs).toContain('setAttribute("aria-selected"');
+		expect(renderSidebarTabs).toContain("panel.hidden");
+		expect(css).toContain(".sidebar-tabs-head");
+		expect(css).toContain(".sidebar-tab-panels");
+		expect(css).toContain(".smart-sidebar");
+		expect(css).toContain(".tab-list");
+		expect(css).toContain(".tab-button");
+		expect(css).toContain(".tab-panel");
+	});
+
+	test("shows workflow progress counts only when real steps exist and keeps click-selected tasks from snapshot data", () => {
+		const app = readConsoleAsset("app.js");
+		const html = readConsoleAsset("index.html");
 		const renderFlow = extractFunctionSource(app, "renderFlow");
 		const updateStepNode = extractFunctionSource(app, "updateStepNode");
 		const getOrCreateTaskNode = extractFunctionSource(app, "getOrCreateTaskNode");
 
 		expect(renderFlow).toContain("steps.flatMap((step) => step.tasks)");
+		expect(renderFlow).toContain("allTasks.length > 0");
+		expect(renderFlow).toContain("elements.totalProgress.hidden");
 		expect(renderFlow).toContain("elements.totalProgress.textContent");
 		expect(renderFlow).toContain(`已完成 \${doneTasks} 个，共 \${allTasks.length} 个`);
 		expect(updateStepNode).toContain(`progress.textContent = \`\${done} / \${step.tasks.length}\``);
 		expect(updateStepNode).toContain(`阶段进度：\${done} / \${step.tasks.length}`);
 		expect(getOrCreateTaskNode).toContain("selectedTaskId = taskId");
 		expect(getOrCreateTaskNode).toContain("renderFlow(latestSnapshot?.run.steps ?? [])");
+		expect(html).not.toContain(">0 / 0<");
 	});
 
-	test("surfaces stopping state and disables actions during stop or replace processing", () => {
+	test("surfaces stopping state and disables the single primary action during stop or pending requests", () => {
 		const app = readConsoleAsset("app.js");
+		const html = readConsoleAsset("index.html");
 		const renderRunStatus = extractFunctionSource(app, "renderRunStatus");
 		const updateActionState = extractFunctionSource(app, "updateActionState");
 
 		expect(app).toContain('stopping: "停止中"');
 		expect(renderRunStatus).toContain("statusText[status]");
-		expect(updateActionState).toContain('status === "running" || status === "stopping"');
+		expect(updateActionState).toContain('status === "running"');
 		expect(updateActionState).toContain('status === "stopping"');
-		expect(updateActionState).toContain("elements.submit.disabled");
-		expect(updateActionState).toContain("elements.stop.disabled");
+		expect(updateActionState).toContain("elements.mainAction.disabled");
+		expect(updateActionState).toContain("elements.mainAction.dataset.mode");
 		expect(updateActionState).toContain("elements.instruction.disabled");
+		expect(html).toContain("data-main-action");
 	});
 
 	test("guards workflow ordering so status-only snapshots update existing flow nodes in place", () => {
@@ -3732,6 +3915,26 @@ describe("rpc task console frontend static contracts", () => {
 		expect(css).toContain("body.control-edge-left .control-rail");
 	});
 
+	test("keeps rail drag feedback, edge commit, and drag cleanup logic in the frontend contract", () => {
+		const app = readConsoleAsset("app.js");
+		const css = readConsoleAsset("styles.css");
+		const setupControlPanel = extractFunctionSource(app, "setupControlPanel");
+
+		expect(setupControlPanel).toContain('elements.rail.addEventListener("pointermove"');
+		expect(setupControlPanel).toContain('elements.rail.addEventListener("pointerup"');
+		expect(setupControlPanel).toContain("event.clientX");
+		expect(app).toContain('style.setProperty("--rail-drag-x"');
+		expect(setupControlPanel).toContain("clientX < window.innerWidth / 2");
+		expect(setupControlPanel).toContain('elements.rail.dataset.dragged = "true"');
+		expect(setupControlPanel).toContain('button.dataset.dragged === "true"');
+		expect(setupControlPanel).toContain('elements.rail.addEventListener("pointercancel"');
+		expect(setupControlPanel).toContain('elements.rail.addEventListener("lostpointercapture"');
+		expect(app).toContain('style.removeProperty("--rail-drag-x")');
+		expect(css).toContain("--rail-drag-x");
+		expect(css).toContain("transform: translate3d(var(--rail-drag-x), 0, 0);");
+		expect(css).toContain(".control-rail.dragging");
+	});
+
 	test("uses card board width and ResizeObserver for 3/2/1 responsive cards without mobile horizontal overflow", () => {
 		const app = readConsoleAsset("app.js");
 		const css = readConsoleAsset("styles.css");
@@ -3745,6 +3948,20 @@ describe("rpc task console frontend static contracts", () => {
 		expect(css).toContain("max-width: 100%;");
 		expect(css).toContain("overflow-x: hidden;");
 		expect(css).toContain("@media (max-width: 760px)");
+	});
+
+	test("auto-resizes the instruction textarea with a capped height and internal scroll", () => {
+		const app = readConsoleAsset("app.js");
+		const css = readConsoleAsset("styles.css");
+		const setupComposer = extractFunctionSource(app, "setupComposer");
+
+		expect(setupComposer).toContain("syncInstructionHeight()");
+		expect(app).toContain("function syncInstructionHeight()");
+		expect(app).toContain('style.height = "auto"');
+		expect(app).toContain("scrollHeight");
+		expect(css).toContain(".composer textarea");
+		expect(css).toContain("overflow-y: auto;");
+		expect(css).toContain("max-height:");
 	});
 
 	test("keeps fixed viewport layout with independent scroll regions", () => {
@@ -3793,11 +4010,21 @@ describe("rpc task console frontend static contracts", () => {
 		expect(renderLocalError).toContain('node.setAttribute("aria-label"');
 		expect(renderLocalError).toContain("前端错误");
 		expect(renderLocalError).toContain("message");
-		expect(html).toContain('aria-label="发送指令"');
-		expect(html).toContain('aria-label="停止运行"');
+		expect(html).toContain('aria-label="开始运行"');
+		expect(html).not.toContain('aria-label="停止运行"');
 		expect(css).toContain("button:focus-visible");
+		expect(css).toContain("textarea:focus-visible");
 		expect(css).toContain("@media (prefers-reduced-motion: reduce)");
 		expect(css).toContain("animation-duration: 0.01ms !important;");
+	});
+
+	test("widens the collaboration sidebar on desktop while keeping mobile viewport bounds", () => {
+		const css = readConsoleAsset("styles.css");
+
+		expect(css).toContain("--side-width: min(570px, 56vw);");
+		expect(css).not.toContain("--side-width: min(380px, 40vw);");
+		expect(css).toContain("--side-width: min(360px, 92vw);");
+		expect(css).toContain("--side-width: min(360px, 100vw);");
 	});
 });
 
@@ -3836,7 +4063,7 @@ describe("rpc task console HTTP API", () => {
 			const runResponse = await fetch(`${getServerBaseUrl(server)}/runs/start`, {
 				method: "POST",
 				headers: { "content-type": "application/json" },
-				body: JSON.stringify({ steps: createInitialSteps(), userInstruction: "demo" }),
+				body: JSON.stringify({ steps: createDemoPlanSteps(), userInstruction: "demo" }),
 			});
 			expect(runResponse.status).toBe(202);
 
@@ -3896,11 +4123,12 @@ describe("rpc task console HTTP API", () => {
 
 			const initialSnapshot = await readFirstSseSnapshot(baseUrl);
 			expect(initialSnapshot.run.status).toBe("idle");
+			expect(initialSnapshot.run.steps).toEqual([]);
 
 			const runResponse = await fetch(`${baseUrl}/runs/start`, {
 				method: "POST",
 				headers: { "content-type": "application/json" },
-				body: JSON.stringify({ steps: createInitialSteps(), userInstruction: "demo" }),
+				body: JSON.stringify({ steps: createDemoPlanSteps(), userInstruction: "demo" }),
 			});
 			expect(runResponse.status).toBe(202);
 			const runBody = await readJson<{ readonly run: TaskRun }>(runResponse);
@@ -3984,7 +4212,7 @@ describe("rpc task console HTTP API", () => {
 		];
 		const children: FakeChildAgentProcess[] = [];
 		const manager = new RunManager({
-			steps: createInitialSteps(),
+			steps: createDemoPlanSteps(),
 			demoEnv: createDemoEnv(undefined, {
 				runtimeConfig: {
 					...DEFAULT_RUNTIME_CONFIG,
@@ -4117,7 +4345,7 @@ describe("rpc task console HTTP API", () => {
 			},
 		];
 		const manager = new RunManager({
-			steps: createInitialSteps(),
+			steps: createDemoPlanSteps(),
 			demoEnv: createDemoEnv(),
 			childFactory: (options) =>
 				new FakeChildAgentProcess(options, [], {
