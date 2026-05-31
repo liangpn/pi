@@ -1,0 +1,1140 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>处置工作台第二版布局稿</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        --bg: #070f1d;
+        --panel: #0f1d31;
+        --panel-2: #14243a;
+        --panel-3: #0b1728;
+        --line: #2f435e;
+        --line-soft: #1e314a;
+        --text: #f2f7fb;
+        --soft: #c6d2df;
+        --muted: #8293aa;
+        --accent: #66a7c8;
+        --green: #3cc47c;
+        --red: #ff6368;
+        --amber: #e7aa46;
+        --shadow: 0 22px 70px rgba(0, 0, 0, 0.42);
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        background: #050b14;
+        color: var(--text);
+        font-family:
+          "PingFang SC", "Microsoft YaHei", "Noto Sans SC", ui-sans-serif,
+          system-ui, sans-serif;
+        letter-spacing: 0;
+      }
+
+      .doc {
+        display: grid;
+        gap: 28px;
+        padding: 28px;
+      }
+
+      .intro {
+        max-width: 1180px;
+        border: 1px solid var(--line);
+        border-radius: 12px;
+        padding: 18px 20px;
+        background: #091524;
+      }
+
+      h1,
+      h2,
+      h3,
+      p {
+        margin: 0;
+      }
+
+      h1 {
+        font-size: 22px;
+        line-height: 1.35;
+      }
+
+      .intro p {
+        margin-top: 8px;
+        color: var(--soft);
+        font-size: 14px;
+        line-height: 1.7;
+      }
+
+      .board {
+        display: grid;
+        grid-template-columns: minmax(0, 1440px) 360px;
+        gap: 12px;
+        align-items: start;
+      }
+
+      .board-title {
+        display: flex;
+        grid-column: 1 / -1;
+        align-items: center;
+        justify-content: space-between;
+        color: var(--soft);
+        font-size: 13px;
+      }
+
+      .frame {
+        position: relative;
+        display: grid;
+        grid-template-rows: 44px minmax(0, 1fr);
+        width: 100%;
+        height: 810px;
+        overflow: hidden;
+        border: 1px solid #334b68;
+        border-radius: 14px;
+        background: var(--bg);
+        box-shadow: var(--shadow);
+      }
+
+      .control-notes {
+        display: grid;
+        gap: 14px;
+        border: 1px solid var(--line);
+        border-radius: 12px;
+        padding: 14px;
+        background: #091524;
+        color: var(--soft);
+        font-size: 12px;
+        line-height: 1.65;
+      }
+
+      .control-notes h3 {
+        color: var(--text);
+        font-size: 14px;
+        line-height: 1.3;
+      }
+
+      .control-notes ul {
+        display: grid;
+        gap: 8px;
+        margin: 0;
+        padding-left: 18px;
+      }
+
+      .control-notes li::marker {
+        color: var(--accent);
+      }
+
+      .control-notes strong {
+        color: var(--text);
+      }
+
+      @media (max-width: 1600px) {
+        .board {
+          grid-template-columns: minmax(0, 1fr);
+        }
+
+        .control-notes {
+          max-width: 1440px;
+        }
+      }
+
+      .topbar {
+        display: grid;
+        grid-template-columns: 190px minmax(0, 1fr) auto;
+        align-items: center;
+        gap: 10px;
+        border-bottom: 1px solid var(--line);
+        padding: 0 10px;
+        background: #07101d;
+      }
+
+      .brand {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        min-width: 0;
+      }
+
+      .mark {
+        display: grid;
+        place-items: center;
+        width: 26px;
+        height: 26px;
+        border: 1px solid #365a7c;
+        border-radius: 8px;
+        color: #bce0ff;
+        background: #0c1d31;
+        font-size: 13px;
+        font-weight: 900;
+      }
+
+      .brand h2 {
+        font-size: 14px;
+        line-height: 1.2;
+      }
+
+      .incident-title {
+        min-width: 0;
+        color: var(--soft);
+        font-size: 13px;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+
+      .top-actions {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+      }
+
+      .pill,
+      .icon-btn {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        min-height: 26px;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: #0d1a2d;
+        color: var(--soft);
+        font-size: 12px;
+        font-weight: 800;
+      }
+
+      .pill {
+        gap: 6px;
+        padding: 0 8px;
+      }
+
+      .icon-btn {
+        width: 28px;
+      }
+
+      .dot {
+        width: 8px;
+        height: 8px;
+        border-radius: 999px;
+        background: var(--green);
+      }
+
+      .workspace {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) 460px;
+        min-height: 0;
+      }
+
+      .workspace.left-docked {
+        grid-template-columns: 460px minmax(0, 1fr);
+      }
+
+      .workspace.collapsed-right {
+        grid-template-columns: minmax(0, 1fr) 0;
+      }
+
+      .workspace.collapsed-left {
+        grid-template-columns: 0 minmax(0, 1fr);
+      }
+
+      .card-zone {
+        min-width: 0;
+        min-height: 0;
+        overflow: hidden;
+        background: #07111f;
+      }
+
+      .workspace.left-docked .card-zone {
+        grid-column: 2;
+      }
+
+      .card-board {
+        height: 100%;
+        overflow: hidden;
+        padding: 8px;
+      }
+
+      .card-grid {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 8px;
+      }
+
+      .card {
+        display: grid;
+        grid-template-rows: 34px minmax(0, 1fr);
+        min-width: 0;
+        height: 246px;
+        overflow: hidden;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: #0d1b2e;
+      }
+
+      .card.selected {
+        border-color: #5e9dbd;
+        box-shadow: inset 3px 0 0 #5e9dbd;
+      }
+
+      .card-head,
+      .pane-head,
+      .side-head,
+      .tabs,
+      .dock-head {
+        display: flex;
+        align-items: center;
+      }
+
+      .card-head {
+        justify-content: space-between;
+        gap: 6px;
+        border-bottom: 1px solid var(--line);
+        padding: 5px 7px;
+        background: #12243a;
+      }
+
+      .card-title {
+        display: flex;
+        align-items: baseline;
+        gap: 8px;
+        min-width: 0;
+      }
+
+      .card-title h3 {
+        overflow: hidden;
+        color: var(--text);
+        font-size: 12px;
+        line-height: 1.2;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .card-title p {
+        margin-top: 0;
+        overflow: hidden;
+        color: var(--muted);
+        font-size: 11px;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .card-actions {
+        display: flex;
+        gap: 4px;
+      }
+
+      .card-action {
+        display: grid;
+        place-items: center;
+        width: 22px;
+        height: 22px;
+        border: 1px solid #39536e;
+        border-radius: 6px;
+        background: #102033;
+        color: var(--soft);
+        font-size: 12px;
+        font-weight: 900;
+      }
+
+      .card-body {
+        min-height: 0;
+        padding: 8px;
+        overflow: hidden;
+      }
+
+      .media-view,
+      .map-view,
+      .receipt-view,
+      .profile-view {
+        height: 100%;
+        border: 1px solid #324c69;
+        border-radius: 8px;
+        background: #071321;
+      }
+
+      .media-view {
+        display: grid;
+        place-items: center;
+        color: #6e8197;
+        background:
+          linear-gradient(135deg, rgba(102, 167, 200, 0.18), transparent 32%),
+          radial-gradient(circle at 50% 45%, rgba(255, 255, 255, 0.06), transparent 24%),
+          #050b10;
+      }
+
+      .map-view {
+        position: relative;
+        background:
+          linear-gradient(90deg, rgba(102, 167, 200, 0.1) 1px, transparent 1px),
+          linear-gradient(rgba(102, 167, 200, 0.1) 1px, transparent 1px),
+          #071321;
+        background-size: 34px 34px;
+      }
+
+      .map-point {
+        position: absolute;
+        display: grid;
+        place-items: center;
+        width: 24px;
+        height: 24px;
+        border: 1px solid currentColor;
+        border-radius: 999px;
+        background: rgba(7, 19, 33, 0.86);
+        color: var(--accent);
+        font-size: 11px;
+        font-weight: 900;
+      }
+
+      .map-point.primary {
+        color: var(--amber);
+      }
+
+      .table {
+        width: 100%;
+        border-collapse: collapse;
+        color: var(--soft);
+        font-size: 12px;
+      }
+
+      .table th,
+      .table td {
+        border-bottom: 1px solid var(--line-soft);
+        padding: 5px 6px;
+        text-align: left;
+      }
+
+      .table th {
+        color: var(--muted);
+        background: #102033;
+      }
+
+      .action-list {
+        display: grid;
+        gap: 6px;
+      }
+
+      .action-row,
+      .receipt-line,
+      .profile-line {
+        border: 1px solid var(--line-soft);
+        border-radius: 6px;
+        padding: 6px 8px;
+        background: #0a1728;
+        color: var(--soft);
+        font-size: 12px;
+        line-height: 1.25;
+      }
+
+      .receipt-view,
+      .profile-view {
+        display: grid;
+        align-content: start;
+        gap: 8px;
+        padding: 10px;
+      }
+
+      .side-panel {
+        display: grid;
+        grid-template-rows: auto minmax(0, 1fr);
+        min-width: 0;
+        min-height: 0;
+        border-left: 1px solid #3d5877;
+        background: var(--panel);
+        box-shadow: -10px 0 22px rgba(0, 0, 0, 0.2);
+      }
+
+      .workspace.left-docked .side-panel {
+        grid-column: 1;
+        grid-row: 1;
+        border-right: 1px solid #3d5877;
+        border-left: 0;
+        box-shadow: 10px 0 22px rgba(0, 0, 0, 0.2);
+      }
+
+      .workspace.collapsed-right .side-panel,
+      .workspace.collapsed-left .side-panel {
+        overflow: visible;
+        border: 0;
+        background: transparent;
+        box-shadow: none;
+      }
+
+      .side-full {
+        display: grid;
+        grid-template-rows: auto minmax(0, 1fr);
+        gap: 6px;
+        min-height: 0;
+        padding: 6px;
+        background: #0a1424;
+      }
+
+      .workspace.collapsed-right .side-full,
+      .workspace.collapsed-left .side-full {
+        display: none;
+      }
+
+      .side-head {
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: 8px;
+        border-bottom: 1px solid rgba(109, 129, 157, 0.28);
+        padding-bottom: 0;
+      }
+
+      .tabs {
+        position: relative;
+        display: flex;
+        align-items: stretch;
+        gap: 0;
+        flex: 1;
+        height: 28px;
+        min-width: 0;
+      }
+
+      .tab {
+        position: relative;
+        display: flex;
+        flex: 1;
+        align-items: center;
+        justify-content: center;
+        min-height: 28px;
+        border: 0;
+        border-radius: 0;
+        background: transparent;
+        color: var(--muted);
+        font-size: 12px;
+        font-weight: 800;
+      }
+
+      .tab + .tab::before {
+        position: absolute;
+        left: 0;
+        width: 1px;
+        height: 14px;
+        background: rgba(109, 129, 157, 0.22);
+        content: "";
+      }
+
+      .tab.active {
+        background: linear-gradient(180deg, rgba(94, 157, 189, 0.12), rgba(94, 157, 189, 0.02));
+        color: var(--text);
+      }
+
+      .tab.active::after {
+        position: absolute;
+        right: 18px;
+        bottom: -1px;
+        left: 18px;
+        height: 2px;
+        border-radius: 99px;
+        background: #5e9dbd;
+        content: "";
+      }
+
+      .side-buttons {
+        display: flex;
+        gap: 6px;
+        padding-top: 1px;
+      }
+
+      .side-buttons .icon-btn {
+        min-height: 26px;
+      }
+
+      .side-content {
+        display: grid;
+        grid-template-rows: minmax(0, 1fr) 4px minmax(0, 1fr);
+        min-height: 0;
+      }
+
+      .pane {
+        display: grid;
+        grid-template-rows: auto minmax(0, 1fr);
+        min-height: 0;
+        overflow: hidden;
+        border: 1px solid #2f4662;
+        border-radius: 8px;
+        background: #0e1b2e;
+      }
+
+      .pane-head {
+        justify-content: space-between;
+        min-height: 30px;
+        border-bottom: 1px solid var(--line);
+        padding: 5px 8px;
+        background: var(--panel-2);
+      }
+
+      .pane-head h3 {
+        font-size: 13px;
+      }
+
+      .pane-head span {
+        color: var(--muted);
+        font-size: 12px;
+      }
+
+      .splitter {
+        display: grid;
+        place-items: center;
+        color: #4f6987;
+        font-size: 9px;
+      }
+
+      .dynamic-list,
+      .process-list,
+      .queue-list,
+      .history-list {
+        display: grid;
+        align-content: start;
+        gap: 4px;
+        min-height: 0;
+        overflow: hidden;
+        padding: 6px;
+      }
+
+      .dynamic-item,
+      .task-row,
+      .queue-item,
+      .history-item {
+        border: 1px solid var(--line-soft);
+        border-radius: 6px;
+        padding: 5px 7px;
+        background: #0c1a2c;
+      }
+
+      .dynamic-item,
+      .queue-item,
+      .history-item {
+        display: grid;
+        grid-template-columns: minmax(0, 168px) minmax(0, 1fr);
+        align-items: center;
+        gap: 8px;
+        min-height: 28px;
+      }
+
+      .dynamic-item strong,
+      .queue-item strong,
+      .history-item strong {
+        display: flex;
+        justify-content: space-between;
+        gap: 8px;
+        min-width: 0;
+        overflow: hidden;
+        color: var(--muted);
+        font-size: 11px;
+        line-height: 1.3;
+      }
+
+      .dynamic-item p,
+      .queue-item p,
+      .history-item p {
+        margin-top: 0;
+        overflow: hidden;
+        color: var(--soft);
+        font-size: 12px;
+        line-height: 1.35;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .dynamic-item.task-result {
+        border-color: #355c80;
+        background: #0b2037;
+      }
+
+      .dynamic-item.user {
+        border-color: #7a5d2a;
+        background: rgba(231, 170, 70, 0.1);
+      }
+
+      .phase {
+        overflow: hidden;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+      }
+
+      .phase-title {
+        display: flex;
+        justify-content: space-between;
+        gap: 10px;
+        border-bottom: 1px solid var(--line);
+        padding: 5px 7px;
+        background: #13243a;
+        color: var(--soft);
+        font-size: 12px;
+        font-weight: 800;
+      }
+
+      .task-row {
+        display: grid;
+        grid-template-columns: 18px minmax(0, 1fr);
+        gap: 6px;
+        align-items: center;
+        border: 0;
+        border-bottom: 1px solid var(--line-soft);
+        border-radius: 0;
+        background: transparent;
+      }
+
+      .task-row:last-child {
+        border-bottom: 0;
+      }
+
+      .task-row.selected {
+        background: rgba(102, 167, 200, 0.12);
+        box-shadow: inset 3px 0 0 var(--accent);
+      }
+
+      .task-icon {
+        display: grid;
+        place-items: center;
+        width: 16px;
+        height: 16px;
+        border: 1px solid currentColor;
+        border-radius: 999px;
+        font-size: 11px;
+        font-weight: 900;
+      }
+
+      .ok {
+        color: var(--green);
+      }
+
+      .run {
+        color: var(--accent);
+      }
+
+      .wait {
+        color: var(--muted);
+      }
+
+      .fail {
+        color: var(--red);
+      }
+
+      .task-copy h4 {
+        overflow: hidden;
+        color: var(--text);
+        font-size: 12px;
+        line-height: 1.35;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .task-copy p {
+        margin-top: 0;
+        overflow: hidden;
+        color: var(--muted);
+        font-size: 11px;
+        line-height: 1.35;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .task-copy {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto;
+        align-items: baseline;
+        gap: 8px;
+      }
+
+      .rail {
+        position: absolute;
+        z-index: 10;
+        display: none;
+        place-items: center;
+        width: 34px;
+        min-height: 138px;
+        border: 1px solid var(--line);
+        border-radius: 9px;
+        background: rgba(9, 21, 38, 0.94);
+        color: #7fd6ff;
+        box-shadow: var(--shadow);
+        font-size: 12px;
+        font-weight: 900;
+        line-height: 1.2;
+        writing-mode: vertical-rl;
+      }
+
+      .workspace.collapsed-right .rail {
+        display: grid;
+        top: 116px;
+        right: 12px;
+      }
+
+      .workspace.collapsed-left .rail {
+        display: grid;
+        top: 116px;
+        left: 12px;
+      }
+
+      .dock-hot-zone {
+        position: absolute;
+        right: 300px;
+        bottom: 0;
+        left: 300px;
+        height: 12px;
+        border-top: 1px dashed rgba(102, 167, 200, 0.35);
+        color: rgba(198, 210, 223, 0.4);
+        font-size: 10px;
+        text-align: center;
+      }
+
+      .command-dock {
+        position: absolute;
+        right: 260px;
+        bottom: 16px;
+        left: 260px;
+        display: grid;
+        gap: 6px;
+        border: 1px solid rgba(102, 167, 200, 0.55);
+        border-radius: 18px;
+        padding: 8px;
+        background: rgba(15, 22, 38, 0.96);
+        box-shadow: var(--shadow);
+      }
+
+      .dock-head {
+        justify-content: space-between;
+        gap: 10px;
+      }
+
+      .context-chip {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        border: 1px solid var(--line);
+        border-radius: 999px;
+        padding: 4px 8px;
+        color: var(--soft);
+        background: #0b182a;
+        font-size: 12px;
+        font-weight: 800;
+      }
+
+      .dock-tools {
+        display: flex;
+        gap: 6px;
+      }
+
+      .dock-input {
+        min-height: 36px;
+        border: 1px solid var(--line);
+        border-radius: 12px;
+        padding: 8px 10px;
+        color: var(--muted);
+        background: #0b182a;
+        font-size: 13px;
+      }
+
+      .max-card {
+        position: absolute;
+        inset: 56px 480px 12px 12px;
+        display: grid;
+        grid-template-rows: 50px minmax(0, 1fr);
+        overflow: hidden;
+        border: 1px solid var(--accent);
+        border-radius: 10px;
+        background: #0d1b2e;
+        box-shadow: var(--shadow);
+      }
+
+      .max-card .map-view {
+        margin: 16px;
+      }
+
+      .note {
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        padding: 12px 14px;
+        background: #091524;
+        color: var(--soft);
+        font-size: 13px;
+        line-height: 1.65;
+      }
+    </style>
+  </head>
+  <body>
+    <main class="doc">
+      <section class="intro">
+        <h1>处置工作台第二版布局稿</h1>
+        <p>
+          本文件把第二版 UI/UX 讨论沉淀为静态画面。它不是实现代码，也不是
+          Stitch 生成结果；它用于约束后续设计和实现，避免工具根据长文字自由脑补。
+        </p>
+        <p>
+          核心模型：一个可左右吸附/收起的侧边协同面板、一个最大化业务卡片工作区、
+          一个默认隐藏的底部浮动处置指令坞。
+        </p>
+        <p>
+          数据源使用 <code>police-command-workflow.json</code>。同一个 task 的产出要同时对应三个位置：
+          业务卡片区展示可视化结果，处置动态展示 task 结果消息，预案进程展示 task 状态和是否有卡片。
+        </p>
+        <p>
+          v2.1 密度原则：顶部、tab、卡片标题、事件、task 行默认一行表达；无效 label 不进界面，
+          长原因进入详情或浮层，不挤占主屏高度。
+        </p>
+      </section>
+
+      <section class="board">
+        <div class="board-title">
+          <h2>01 默认工作态：右侧协同面板展开</h2>
+          <span>指令坞隐藏</span>
+        </div>
+        <div class="frame">
+          <div class="topbar">
+            <div class="brand"><div class="mark">警</div><h2>处置工作台</h2></div>
+            <div class="incident-title">南广场交通事故 · 接警单 CH01-20260601</div>
+            <div class="top-actions">
+              <div class="pill"><span class="dot"></span>处置中</div>
+              <div class="icon-btn">■</div><div class="icon-btn">↻</div><div class="icon-btn">›</div>
+            </div>
+          </div>
+          <div class="workspace">
+            <section class="card-zone">
+              <div class="card-board"><div class="card-grid">
+                <article class="card"><div class="card-head"><div class="card-title"><h3>事发地址定位</h3><p>根据事发地址检索地点 · map</p></div><div class="card-actions"><span class="card-action">▴</span><span class="card-action">□</span></div></div><div class="card-body"><div class="map-view"><span class="map-point primary" style="left:52%;top:42%;">警</span><span class="map-point" style="left:34%;top:55%;">址</span></div></div></article>
+                <article class="card"><div class="card-head"><div class="card-title"><h3>经纬度定位</h3><p>根据经纬度定位地点 · map</p></div><div class="card-actions"><span class="card-action">▴</span><span class="card-action">□</span></div></div><div class="card-body"><div class="map-view"><span class="map-point primary" style="left:52%;top:42%;">警</span><span class="map-point" style="left:68%;top:62%;">像</span></div></div></article>
+                <article class="card"><div class="card-head"><div class="card-title"><h3>报警人背景</h3><p>查询报警人背景 · text</p></div><div class="card-actions"><span class="card-action">▴</span><span class="card-action">□</span></div></div><div class="card-body"><div class="profile-view"><div class="profile-line">姓名：李某某</div><div class="profile-line">标签：多次报警、重点关注</div><div class="profile-line">报警电话已关联历史记录。</div></div></div></article>
+                <article class="card selected"><div class="card-head"><div class="card-title"><h3>处置预案</h3><p>查询处置预案 · text</p></div><div class="card-actions"><span class="card-action">▴</span><span class="card-action">□</span></div></div><div class="card-body"><div class="action-list"><div class="action-row">启动交通事故先期处置流程。</div><div class="action-row">确认警力、监控和执法仪资源。</div><div class="action-row">现场态势不明时追加周边警力查询。</div></div></div></article>
+                <article class="card"><div class="card-head"><div class="card-title"><h3>周边监控</h3><p>打开事发地周边监控 · media</p></div><div class="card-actions"><span class="card-action">▴</span><span class="card-action">□</span></div></div><div class="card-body"><div class="media-view">GBID 监控画面列表</div></div></article>
+                <article class="card"><div class="card-head"><div class="card-title"><h3>周边警力</h3><p>打开事发地周边警力 · map</p></div><div class="card-actions"><span class="card-action">▴</span><span class="card-action">□</span></div></div><div class="card-body"><table class="table"><tr><th>资源</th><th>状态</th><th>距离</th></tr><tr><td>巡组 01</td><td>在岗</td><td>0.4km</td></tr><tr><td>警车 A7</td><td>出警</td><td>1.2km</td></tr><tr><td>铁骑 03</td><td>可调</td><td>2.5km</td></tr></table></div></article>
+              </div></div>
+            </section>
+            <aside class="side-panel">
+              <div class="side-full">
+                <div class="side-head">
+                  <div class="tabs"><div class="tab active">协作</div><div class="tab">队列</div><div class="tab">历史</div></div>
+                  <div class="side-buttons"><div class="icon-btn">⌘</div><div class="icon-btn">›</div></div>
+                </div>
+                <div class="side-content">
+                  <section class="pane"><div class="pane-head"><h3>处置动态</h3><span>事件</span></div><div class="dynamic-list">
+                    <div class="dynamic-item task-result"><strong><span>task · 查询处置预案</span><span>14:42:10</span></strong><p>处置预案 · 卡片。<u>查看卡片</u></p></div>
+                    <div class="dynamic-item task-result"><strong><span>task · 打开事发地周边监控</span><span>14:42:12</span></strong><p>GBID 列表 · 周边监控 · 卡片。</p></div>
+                    <div class="dynamic-item user"><strong><span>指令</span><span>14:45:01</span></strong><p>优先调度南广场西侧警力。</p></div>
+                    <div class="dynamic-item"><strong><span>main agent</span><span>14:45:08</span></strong><p>已记录，等待出警资源。</p></div>
+                  </div></section>
+                  <div class="splitter">⋮⋮ 可拖拽调整 ⋮⋮</div>
+                  <section class="pane"><div class="pane-head"><h3>预案进程</h3><span>2/5</span></div><div class="process-list">
+                    <div class="phase"><div class="phase-title"><span>警情要素识别</span><span>1/1</span></div><div class="task-row"><span class="task-icon ok">✓</span><div class="task-copy"><h4>提取出警设备和人员</h4><p>结果</p></div></div></div>
+                    <div class="phase"><div class="phase-title"><span>基础研判</span><span>5/5</span></div><div class="task-row"><span class="task-icon ok">✓</span><div class="task-copy"><h4>根据事发地址检索地点</h4><p>map</p></div></div><div class="task-row"><span class="task-icon ok">✓</span><div class="task-copy"><h4>查询处置预案</h4><p>text</p></div></div></div>
+                    <div class="phase"><div class="phase-title"><span>现场态势展开</span><span>1/2</span></div><div class="task-row selected"><span class="task-icon ok">✓</span><div class="task-copy"><h4>打开事发地周边监控</h4><p>media</p></div></div><div class="task-row"><span class="task-icon run">◌</span><div class="task-copy"><h4>打开事发地周边警力</h4><p>运行 · map</p></div></div></div>
+                  </div></section>
+                </div>
+              </div>
+            </aside>
+          </div>
+        </div>
+        <aside class="control-notes">
+          <h3>控件说明：默认工作态</h3>
+          <ul>
+            <li><strong>顶部栏：</strong>左侧是产品标识和标题，中间是当前警情名称与接警单号，右侧依次是运行状态、停止、重新执行、收起侧栏按钮。</li>
+            <li><strong>卡片工作区：</strong>只承载 task 的业务结果；每张卡片右上角有收起/展开和最大化按钮，卡片标题必须标明来源 task 与 card_type。</li>
+            <li><strong>协作 tab：</strong>侧栏默认进入协作模式，上半区是处置动态，下半区是预案进程，中间 splitter 支持上下拖拽。</li>
+            <li><strong>处置动态：</strong>显示 task 结果、用户指令、main agent 回应和system；指令坞下发内容也进入这里。</li>
+            <li><strong>预案进程：</strong>按 workflow step 分组展示 task 状态；一条 task 至少要呈现状态、名称、是否有卡片、是否结果。</li>
+            <li><strong>指令坞入口：</strong>侧栏右上角的命令图标用于主动唤起底部浮动指令坞，默认状态不占用页面高度。</li>
+          </ul>
+        </aside>
+      </section>
+
+      <section class="board">
+        <div class="board-title">
+          <h2>02 收起态：side-panel 宽度为 0，rail 出现</h2>
+          <span>主卡片区吃满空间；rail 可上下拖动，也可拖到另一侧吸附</span>
+        </div>
+        <div class="frame">
+          <div class="topbar">
+            <div class="brand"><div class="mark">警</div><h2>处置工作台</h2></div>
+            <div class="incident-title">南广场交通事故 · 卡片专注查看</div>
+            <div class="top-actions"><div class="pill"><span class="dot"></span>处置中</div><div class="icon-btn">■</div><div class="icon-btn">↻</div></div>
+          </div>
+          <div class="workspace collapsed-right">
+            <section class="card-zone"><div class="card-board"><div class="card-grid">
+              <article class="card"><div class="card-head"><div class="card-title"><h3>事发地址定位</h3><p>根据事发地址检索地点</p></div><div class="card-actions"><span class="card-action">▴</span><span class="card-action">□</span></div></div><div class="card-body"><div class="map-view"><span class="map-point primary" style="left:52%;top:42%;">警</span><span class="map-point" style="left:34%;top:55%;">址</span></div></div></article>
+              <article class="card"><div class="card-head"><div class="card-title"><h3>经纬度定位</h3><p>根据经纬度定位地点</p></div><div class="card-actions"><span class="card-action">▴</span><span class="card-action">□</span></div></div><div class="card-body"><div class="map-view"><span class="map-point primary" style="left:52%;top:42%;">警</span><span class="map-point" style="left:68%;top:62%;">像</span></div></div></article>
+              <article class="card"><div class="card-head"><div class="card-title"><h3>报警人背景</h3><p>查询报警人背景</p></div><div class="card-actions"><span class="card-action">▴</span><span class="card-action">□</span></div></div><div class="card-body"><div class="profile-view"><div class="profile-line">姓名：李某某</div><div class="profile-line">标签：多次报警</div></div></div></article>
+              <article class="card"><div class="card-head"><div class="card-title"><h3>处置预案</h3><p>查询处置预案</p></div><div class="card-actions"><span class="card-action">▴</span><span class="card-action">□</span></div></div><div class="card-body"><div class="action-list"><div class="action-row">启动交通事故先期处置流程。</div><div class="action-row">确认警力、监控和执法仪资源。</div></div></div></article>
+              <article class="card"><div class="card-head"><div class="card-title"><h3>周边监控</h3><p>打开事发地周边监控</p></div><div class="card-actions"><span class="card-action">▴</span><span class="card-action">□</span></div></div><div class="card-body"><div class="media-view">GBID 监控画面列表</div></div></article>
+              <article class="card"><div class="card-head"><div class="card-title"><h3>周边警力</h3><p>打开事发地周边警力</p></div><div class="card-actions"><span class="card-action">▴</span><span class="card-action">□</span></div></div><div class="card-body"><table class="table"><tr><th>资源</th><th>状态</th><th>距离</th></tr><tr><td>巡组 01</td><td>在岗</td><td>0.4km</td></tr><tr><td>警车 A7</td><td>出警</td><td>1.2km</td></tr></table></div></article>
+            </div></div></section>
+            <aside class="side-panel"><div class="side-full"></div></aside>
+            <div class="rail">处置协同</div>
+          </div>
+        </div>
+        <aside class="control-notes">
+          <h3>控件说明：侧栏收起态</h3>
+          <ul>
+            <li><strong>收起结果：</strong>side-panel 宽度为 0，不保留空白列，卡片工作区获得完整横向空间。</li>
+            <li><strong>rail 控件：</strong>竖排“处置协同”是唯一入口；可沿当前边缘上下拖动，也可拖到另一侧改变吸附方向。</li>
+            <li><strong>展开规则：</strong>点击 rail 展开侧栏；拖动 rail 时不触发展开，避免误操作。</li>
+            <li><strong>顶部按钮：</strong>收起态顶部不再显示侧栏方向按钮，只保留运行、停止、重新执行等全局操作。</li>
+            <li><strong>卡片控件：</strong>卡片的收起、最大化仍可用，且不依赖侧栏是否展开。</li>
+          </ul>
+        </aside>
+      </section>
+
+      <section class="board">
+        <div class="board-title">
+          <h2>03 左侧吸附态：同一 side-panel 拖到左边展开</h2>
+          <span>吸附方向只改变布局偏好，不改变 run、task、card 或 message 数据</span>
+        </div>
+        <div class="frame">
+          <div class="topbar">
+            <div class="brand"><div class="mark">警</div><h2>处置工作台</h2></div>
+            <div class="incident-title">南广场交通事故 · 侧边栏左侧吸附</div>
+            <div class="top-actions"><div class="pill"><span class="dot"></span>处置中</div><div class="icon-btn">■</div><div class="icon-btn">↻</div><div class="icon-btn">‹</div></div>
+          </div>
+          <div class="workspace left-docked">
+            <aside class="side-panel"><div class="side-full"><div class="side-head"><div class="tabs"><div class="tab active">协作</div><div class="tab">队列</div><div class="tab">历史</div></div><div class="side-buttons"><div class="icon-btn">⌘</div><div class="icon-btn">‹</div></div></div><div class="side-content"><section class="pane"><div class="pane-head"><h3>处置动态</h3><span>事件</span></div><div class="dynamic-list"><div class="dynamic-item task-result"><strong><span>task · 查询处置预案</span><span>14:42:10</span></strong><p>已处置预案 · 卡片。<u>查看卡片</u></p></div><div class="dynamic-item"><strong><span>system</span><span>14:42:12</span></strong><p>进程已同步。</p></div></div></section><div class="splitter">⋮⋮</div><section class="pane"><div class="pane-head"><h3>预案进程</h3><span>现场态势展开</span></div><div class="process-list"><div class="phase"><div class="phase-title"><span>现场态势展开</span><span>1/2</span></div><div class="task-row selected"><span class="task-icon run">◌</span><div class="task-copy"><h4>打开事发地周边警力</h4><p>运行 · map</p></div></div></div></div></section></div></div></aside>
+            <section class="card-zone"><div class="card-board"><div class="card-grid">
+              <article class="card"><div class="card-head"><div class="card-title"><h3>事发地址定位</h3><p>根据事发地址检索地点</p></div><div class="card-actions"><span class="card-action">▴</span><span class="card-action">□</span></div></div><div class="card-body"><div class="map-view"><span class="map-point primary" style="left:52%;top:42%;">警</span></div></div></article>
+              <article class="card"><div class="card-head"><div class="card-title"><h3>周边监控</h3><p>打开事发地周边监控</p></div><div class="card-actions"><span class="card-action">▴</span><span class="card-action">□</span></div></div><div class="card-body"><div class="media-view">GBID 监控画面列表</div></div></article>
+              <article class="card selected"><div class="card-head"><div class="card-title"><h3>处置预案</h3><p>查询处置预案</p></div><div class="card-actions"><span class="card-action">▴</span><span class="card-action">□</span></div></div><div class="card-body"><div class="action-list"><div class="action-row">启动交通事故先期处置流程。</div><div class="action-row">确认警力、监控和执法仪资源。</div></div></div></article>
+            </div></div></section>
+          </div>
+        </div>
+        <aside class="control-notes">
+          <h3>控件说明：左侧吸附态</h3>
+          <ul>
+            <li><strong>吸附方向：</strong>同一个 side-panel 从右侧移动到左侧，数据、task 状态、卡片和消息都不改变。</li>
+            <li><strong>侧栏头部：</strong>左侧吸附时收起按钮方向变为向左，表示收起到左边缘 rail。</li>
+            <li><strong>协作 tab：</strong>仍由处置动态和预案进程组成，只改变视觉位置，不改变上下区域职责。</li>
+            <li><strong>卡片工作区：</strong>位于右侧，继续按剩余宽度自适应列数；最大化卡片只覆盖右侧卡片区域。</li>
+            <li><strong>适用场景：</strong>用户希望左手查看协作流、右侧大面积查看地图或监控时使用。</li>
+          </ul>
+        </aside>
+      </section>
+
+      <section class="board">
+        <div class="board-title">
+          <h2>04 队列 tab：多个警情在同一侧边区域排队</h2>
+          <span>不单独做左侧队列栏；队列属于 side-panel 的一个 tab</span>
+        </div>
+        <div class="frame">
+          <div class="topbar"><div class="brand"><div class="mark">警</div><h2>处置工作台</h2></div><div class="incident-title">南广场交通事故</div><div class="top-actions"><div class="pill"><span class="dot"></span>处置中</div><div class="icon-btn">■</div><div class="icon-btn">↻</div><div class="icon-btn">›</div></div></div>
+          <div class="workspace">
+            <section class="card-zone"><div class="card-board"><div class="card-grid"><article class="card"><div class="card-head"><div class="card-title"><h3>周边监控</h3><p>打开事发地周边监控</p></div><div class="card-actions"><span class="card-action">▴</span><span class="card-action">□</span></div></div><div class="card-body"><div class="media-view">GBID 监控画面列表</div></div></article><article class="card"><div class="card-head"><div class="card-title"><h3>事发地址定位</h3><p>根据事发地址检索地点</p></div><div class="card-actions"><span class="card-action">▴</span><span class="card-action">□</span></div></div><div class="card-body"><div class="map-view"><span class="map-point primary" style="left:52%;top:42%;">警</span></div></div></article><article class="card"><div class="card-head"><div class="card-title"><h3>处置预案</h3><p>查询处置预案</p></div><div class="card-actions"><span class="card-action">▴</span><span class="card-action">□</span></div></div><div class="card-body"><div class="action-list"><div class="action-row">启动交通事故先期处置流程。</div><div class="action-row">确认警力、监控和执法仪资源。</div></div></div></article></div></div></section>
+            <aside class="side-panel"><div class="side-full"><div class="side-head"><div class="tabs"><div class="tab">协作</div><div class="tab active">队列</div><div class="tab">历史</div></div><div class="side-buttons"><div class="icon-btn">⌘</div><div class="icon-btn">›</div></div></div><section class="pane"><div class="pane-head"><h3>警情队列</h3><span>按进入顺序</span></div><div class="queue-list"><div class="queue-item" style="border-color:#5e9dbd"><strong><span>当前处理</span><span>14:20</span></strong><p>南广场交通事故 · 含预案 steps · 处置中</p></div><div class="queue-item"><strong><span>等待</span><span>14:35</span></strong><p>人员聚集预警 · 含预案 steps · 未开始</p></div><div class="queue-item"><strong><span>等待</span><span>14:50</span></strong><p>重点设施告警 · 需 main agent 判断</p></div><div class="queue-item"><strong><span>挂起</span><span>15:02</span></strong><p>群众求助记录 · 等待补充材料</p></div></div></section></div></aside>
+          </div>
+        </div>
+        <aside class="control-notes">
+          <h3>控件说明：队列 tab</h3>
+          <ul>
+            <li><strong>tab 切换：</strong>协作、队列、历史是同一侧栏的三个模式，不再拆成多个侧边栏。</li>
+            <li><strong>队列列表：</strong>每条警情显示状态、进入时间、警情摘要和处置状态；当前处理项使用强调边框。</li>
+            <li><strong>选择行为：</strong>点击队列项切换当前警情；主卡片区随之切换到对应警情的 cards snapshot。</li>
+            <li><strong>挂起项：</strong>挂起表示等待补充材料或人工确认，不自动占用当前处置 workflow。</li>
+            <li><strong>指令坞按钮：</strong>仍保留在侧栏头部，用于对当前选中的警情下发指令。</li>
+          </ul>
+        </aside>
+      </section>
+
+      <section class="board">
+        <div class="board-title">
+          <h2>05 历史 tab：回看已完成或已停止的协同记录</h2>
+          <span>历史记录关联 snapshot、messages、cards、logs，但主屏仍以卡片回看为主</span>
+        </div>
+        <div class="frame">
+          <div class="topbar"><div class="brand"><div class="mark">警</div><h2>处置工作台</h2></div><div class="incident-title">历史回看：南广场交通事故</div><div class="top-actions"><div class="pill"><span class="dot" style="background:var(--muted)"></span>回看模式</div><div class="icon-btn">↧</div><div class="icon-btn">›</div></div></div>
+          <div class="workspace">
+            <section class="card-zone"><div class="card-board"><div class="card-grid"><article class="card"><div class="card-head"><div class="card-title"><h3>处置结果摘要</h3><p>历史 run：已完成</p></div><div class="card-actions"><span class="card-action">▴</span><span class="card-action">□</span></div></div><div class="card-body"><div class="action-list"><div class="action-row">警情要素、基础研判、现场态势已完成。</div><div class="action-row">可回看 task 结果消息和业务卡片。</div></div></div></article><article class="card"><div class="card-head"><div class="card-title"><h3>关键卡片回看</h3><p>历史 cards：6 张</p></div><div class="card-actions"><span class="card-action">▴</span><span class="card-action">□</span></div></div><div class="card-body"><div class="receipt-view"><div class="receipt-line">事发地址定位</div><div class="receipt-line">处置预案</div><div class="receipt-line">周边监控</div><div class="receipt-line">周边警力</div></div></div></article></div></div></section>
+            <aside class="side-panel"><div class="side-full"><div class="side-head"><div class="tabs"><div class="tab">协作</div><div class="tab">队列</div><div class="tab active">历史</div></div><div class="side-buttons"><div class="icon-btn">⌘</div><div class="icon-btn">›</div></div></div><section class="pane"><div class="pane-head"><h3>协同历史</h3><span>最近记录</span></div><div class="history-list"><div class="history-item" style="border-color:#5e9dbd"><strong><span>南广场交通事故</span><span>已完成</span></strong><p>workflow run · cards 4 · messages 18 · 可回看</p></div><div class="history-item"><strong><span>人员聚集预警</span><span>已停止</span></strong><p>用户中止后进入人工处置。</p></div><div class="history-item"><strong><span>重点设施告警</span><span>已完成</span></strong><p>spawn_agent 临时协查后关闭。</p></div></div></section></div></aside>
+          </div>
+        </div>
+        <aside class="control-notes">
+          <h3>控件说明：历史 tab</h3>
+          <ul>
+            <li><strong>历史列表：</strong>展示已完成、已停止或转人工的协同记录；每条记录可回看 cards、messages、workflow snapshot。</li>
+            <li><strong>回看模式：</strong>顶部状态从运行态变为回看态，避免用户误以为历史记录仍在执行。</li>
+            <li><strong>主卡片区：</strong>默认展示历史结果摘要和关键卡片回看，不展示运行日志或调试信息。</li>
+            <li><strong>操作边界：</strong>历史记录可查看、导出或复用为新处置上下文，但不直接修改原 run。</li>
+            <li><strong>视觉要求：</strong>历史 tab 仍使用密集列表，避免把每条历史记录做成大卡片。</li>
+          </ul>
+        </aside>
+      </section>
+
+      <section class="board">
+        <div class="board-title">
+          <h2>06 卡片最大化态：只覆盖卡片工作区，不覆盖 side-panel</h2>
+          <span>最大化用于视频、地图、表格等需要细看内容；协同侧边仍可用</span>
+        </div>
+        <div class="frame">
+          <div class="topbar"><div class="brand"><div class="mark">警</div><h2>处置工作台</h2></div><div class="incident-title">南广场交通事故 · 事发地址定位最大化</div><div class="top-actions"><div class="pill"><span class="dot"></span>处置中</div><div class="icon-btn">■</div><div class="icon-btn">↻</div><div class="icon-btn">›</div></div></div>
+          <div class="workspace">
+            <section class="card-zone"><div class="card-board"><div class="card-grid"><article class="card"><div class="card-head"><div class="card-title"><h3>周边监控</h3><p>打开事发地周边监控</p></div><div class="card-actions"><span class="card-action">▴</span><span class="card-action">□</span></div></div><div class="card-body"><div class="media-view">GBID 监控画面列表</div></div></article><article class="card"><div class="card-head"><div class="card-title"><h3>事发地址定位</h3><p>根据事发地址检索地点</p></div><div class="card-actions"><span class="card-action">▴</span><span class="card-action">×</span></div></div><div class="card-body"><div class="map-view"><span class="map-point primary" style="left:52%;top:42%;">警</span></div></div></article></div></div></section>
+            <aside class="side-panel"><div class="side-full"><div class="side-head"><div class="tabs"><div class="tab active">协作</div><div class="tab">队列</div><div class="tab">历史</div></div><div class="side-buttons"><div class="icon-btn">⌘</div><div class="icon-btn">›</div></div></div><div class="side-content"><section class="pane"><div class="pane-head"><h3>处置动态</h3><span>事件</span></div><div class="dynamic-list"><div class="dynamic-item task-result"><strong><span>task · 根据事发地址检索地点</span><span>14:42:10</span></strong><p>地图最大化。</p></div></div></section><div class="splitter">⋮⋮</div><section class="pane"><div class="pane-head"><h3>预案进程</h3><span>基础研判</span></div><div class="process-list"><div class="task-row selected"><span class="task-icon ok">✓</span><div class="task-copy"><h4>根据事发地址检索地点</h4><p>map</p></div></div></div></section></div></div></aside>
+            <article class="max-card"><div class="card-head"><div class="card-title"><h3>事发地址定位 · 最大化</h3><p>只覆盖卡片工作区，不覆盖处置协同</p></div><div class="card-actions"><span class="card-action">×</span></div></div><div class="map-view"><span class="map-point primary" style="left:50%;top:42%;">警</span><span class="map-point" style="left:35%;top:58%;">车</span><span class="map-point" style="left:69%;top:62%;">像</span><span class="map-point" style="left:55%;top:70%;">医</span></div></article>
+          </div>
+        </div>
+        <aside class="control-notes">
+          <h3>控件说明：卡片最大化态</h3>
+          <ul>
+            <li><strong>最大化范围：</strong>只覆盖卡片工作区，不覆盖 side-panel，协作信息和预案进程保持可见。</li>
+            <li><strong>入口控件：</strong>卡片标题栏右侧的方框按钮进入最大化；最大化后右上角 × 恢复原卡片尺寸。</li>
+            <li><strong>适用卡片：</strong>地图、视频、表格等需要细看内容优先支持最大化。</li>
+            <li><strong>侧栏联动：</strong>处置动态记录“某 task 卡片被最大化查看”；预案进程选中对应 task。</li>
+            <li><strong>布局约束：</strong>最大化层不得挤压侧栏，也不得把指令坞推高；它只是卡片区内部浮层。</li>
+          </ul>
+        </aside>
+      </section>
+
+      <section class="board">
+        <div class="board-title">
+          <h2>07 指令坞 hover 浮出态：不占布局高度</h2>
+          <span>鼠标靠近浏览器底部时浮出；离开且未聚焦时消失</span>
+        </div>
+        <div class="frame">
+          <div class="topbar"><div class="brand"><div class="mark">警</div><h2>处置工作台</h2></div><div class="incident-title">南广场交通事故 · 指令坞 hover 浮出</div><div class="top-actions"><div class="pill"><span class="dot"></span>处置中</div><div class="icon-btn">■</div><div class="icon-btn">↻</div><div class="icon-btn">›</div></div></div>
+          <div class="workspace">
+            <section class="card-zone"><div class="card-board"><div class="card-grid"><article class="card"><div class="card-head"><div class="card-title"><h3>周边监控</h3><p>打开事发地周边监控</p></div><div class="card-actions"><span class="card-action">▴</span><span class="card-action">□</span></div></div><div class="card-body"><div class="media-view">GBID 监控画面列表</div></div></article><article class="card"><div class="card-head"><div class="card-title"><h3>事发地址定位</h3><p>根据事发地址检索地点</p></div><div class="card-actions"><span class="card-action">▴</span><span class="card-action">□</span></div></div><div class="card-body"><div class="map-view"><span class="map-point primary" style="left:52%;top:42%;">警</span></div></div></article><article class="card selected"><div class="card-head"><div class="card-title"><h3>出警执法仪</h3><p>调阅出警民警单兵或执法仪</p></div><div class="card-actions"><span class="card-action">▴</span><span class="card-action">□</span></div></div><div class="card-body"><div class="media-view">单兵 / 执法仪 GBID 画面</div></div></article></div></div></section>
+            <aside class="side-panel"><div class="side-full"><div class="side-head"><div class="tabs"><div class="tab active">协作</div><div class="tab">队列</div><div class="tab">历史</div></div><div class="side-buttons"><div class="icon-btn">⌘</div><div class="icon-btn">›</div></div></div><div class="side-content"><section class="pane"><div class="pane-head"><h3>处置动态</h3><span>事件</span></div><div class="dynamic-list"><div class="dynamic-item task-result"><strong><span>task · 调阅出警民警单兵或执法仪</span><span>14:42:10</span></strong><p>GBID 列表 · 执法仪刷新中。</p></div></div></section><div class="splitter">⋮⋮</div><section class="pane"><div class="pane-head"><h3>预案进程</h3><span>出警资源可视化</span></div><div class="process-list"><div class="task-row selected"><span class="task-icon run">◌</span><div class="task-copy"><h4>调阅出警民警单兵或执法仪</h4><p>运行 · media</p></div></div></div></section></div></div></aside>
+          </div>
+          <div class="dock-hot-zone">底部 hover 热区</div>
+          <div class="command-dock"><div class="dock-head"><span class="context-chip">南广场交通事故</span><div class="dock-tools"><span class="icon-btn">＋</span><span class="icon-btn">临</span><span class="icon-btn">补</span><span class="icon-btn">↑</span></div></div><div class="dock-input">输入指令，或发起临时协查...</div></div>
+        </div>
+        <aside class="control-notes">
+          <h3>控件说明：指令坞 hover 浮出态</h3>
+          <ul>
+            <li><strong>触发方式：</strong>鼠标靠近浏览器底部热区时浮出；离开且输入框未聚焦时自动隐藏。</li>
+            <li><strong>常驻条件：</strong>点击输入框、选择失败 task、或点击侧栏头部命令按钮后，指令坞进入常驻状态。</li>
+            <li><strong>上下文 chip：</strong>显示当前警情或当前绑定 task；失败 task 场景下要显示具体 task 名称。</li>
+            <li><strong>工具按钮：</strong>＋ 用于上传附件，临用于临时协查，补用于补救 workflow，↑ 用于发送指令。</li>
+            <li><strong>数据流向：</strong>发送后的用户指令必须进入处置动态，并可能触发 main agent、workflow task 或 spawn agent。</li>
+            <li><strong>布局约束：</strong>指令坞是浮层，不占用 workspace 高度，也不改变卡片网格和侧栏高度。</li>
+          </ul>
+        </aside>
+      </section>
+
+      <section class="board">
+        <div class="board-title">
+          <h2>08 失败 task 选中态：指令坞点击后常驻</h2>
+          <span>指令坞绑定当前失败 task，可上传附件、发起补救 workflow 或临时协查</span>
+        </div>
+        <div class="frame">
+          <div class="topbar"><div class="brand"><div class="mark">警</div><h2>处置工作台</h2></div><div class="incident-title">南广场交通事故 · 等待补救指令</div><div class="top-actions"><div class="pill"><span class="dot" style="background:var(--red)"></span>待补救</div><div class="icon-btn">■</div><div class="icon-btn">↻</div><div class="icon-btn">›</div></div></div>
+          <div class="workspace">
+            <section class="card-zone"><div class="card-board"><div class="card-grid"><article class="card"><div class="card-head"><div class="card-title"><h3>周边监控</h3><p>打开事发地周边监控</p></div><div class="card-actions"><span class="card-action">▴</span><span class="card-action">□</span></div></div><div class="card-body"><div class="media-view">GBID 监控画面列表</div></div></article><article class="card"><div class="card-head"><div class="card-title"><h3>事发地址定位</h3><p>根据事发地址检索地点</p></div><div class="card-actions"><span class="card-action">▴</span><span class="card-action">□</span></div></div><div class="card-body"><div class="map-view"><span class="map-point primary" style="left:52%;top:42%;">警</span></div></div></article><article class="card"><div class="card-head"><div class="card-title"><h3>处置预案</h3><p>查询处置预案</p></div><div class="card-actions"><span class="card-action">▴</span><span class="card-action">□</span></div></div><div class="card-body"><div class="action-list"><div class="action-row">启动交通事故先期处置流程。</div><div class="action-row">确认警力、监控和执法仪资源。</div></div></div></article></div><p class="note" style="margin-top:14px;">失败 task：无卡，见事件流和进程。</p></div></section>
+            <aside class="side-panel"><div class="side-full"><div class="side-head"><div class="tabs"><div class="tab active">协作</div><div class="tab">队列</div><div class="tab">历史</div></div><div class="side-buttons"><div class="icon-btn">⌘</div><div class="icon-btn">›</div></div></div><div class="side-content"><section class="pane"><div class="pane-head"><h3>处置动态</h3><span>事件</span></div><div class="dynamic-list"><div class="dynamic-item task-result" style="border-color:var(--red)"><strong><span>task · 跟踪出警警车</span><span>14:48:30</span></strong><p>跟踪出警警车失败：警车设备 GBID 暂不可用。无卡，补充设备后重试。</p></div><div class="dynamic-item"><strong><span>main agent</span><span>14:48:32</span></strong><p>补救：刷新出警设备后重试。</p></div></div></section><div class="splitter">⋮⋮</div><section class="pane"><div class="pane-head"><h3>预案进程</h3><span>出警资源可视化</span></div><div class="process-list"><div class="phase"><div class="phase-title"><span>出警资源可视化</span><span>1/2</span></div><div class="task-row"><span class="task-icon ok">✓</span><div class="task-copy"><h4>调阅出警民警单兵或执法仪</h4><p>media</p></div></div><div class="task-row selected"><span class="task-icon fail">×</span><div class="task-copy"><h4>跟踪出警警车</h4><p>失败 · 无卡 · 结果 · 待补救</p></div></div></div></div></section></div></div></aside>
+          </div>
+          <div class="command-dock"><div class="dock-head"><span class="context-chip">跟踪出警警车 · 失败</span><div class="dock-tools"><span class="icon-btn">＋</span><span class="icon-btn">补</span><span class="icon-btn">临</span><span class="icon-btn">↑</span></div></div><div class="dock-input">补救指令、附件或临时协查...</div></div>
+        </div>
+        <aside class="control-notes">
+          <h3>控件说明：失败 task 选中态</h3>
+          <ul>
+            <li><strong>失败状态：</strong>顶部状态 pill 变为待补救，预案进程中失败 task 行选中并显示红色失败图标。</li>
+            <li><strong>三处产出：</strong>失败 task 不生成业务卡片，但必须在处置动态输出失败结果，并在预案进程保留失败状态。</li>
+            <li><strong>指令坞绑定：</strong>context chip 绑定“跟踪出警警车”，用户输入默认作为该 task 的补救指令。</li>
+            <li><strong>补救按钮：</strong>补用于启动补救 workflow，临用于启动临时协查，＋用于补充附件或设备信息。</li>
+            <li><strong>处置动态：</strong>用户补救指令、main agent 响应、后续 task 结果都追加到同一事件流中。</li>
+            <li><strong>高度策略：</strong>失败说明不应在 task 行里展开成长文本；长原因放在处置动态或点击详情里。</li>
+          </ul>
+        </aside>
+      </section>
+    </main>
+  </body>
+</html>
