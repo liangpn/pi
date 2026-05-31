@@ -78,6 +78,11 @@ export function loadDemoEnv(exampleDir: string, baseEnv: NodeJS.ProcessEnv): Rpc
 	childEnv.PI_DEMO_CHILD_AGENT_DIR = childAgentDir;
 	childEnv.PI_CODING_AGENT_DIR = childAgentDir;
 	childEnv.PI_DEMO_RUNTIME_CONFIG_PATH = runtimeConfigPath;
+	if (!readEnv(childEnv, "NPM_CONFIG_CACHE") && !readEnv(childEnv, "npm_config_cache")) {
+		const npmCacheDir = join(outputDir, "npm-cache");
+		childEnv.NPM_CONFIG_CACHE = npmCacheDir;
+		childEnv.npm_config_cache = npmCacheDir;
+	}
 	if (childSessionDir) {
 		childEnv.PI_DEMO_CHILD_SESSION_DIR = childSessionDir;
 		childEnv.PI_CODING_AGENT_SESSION_DIR = childSessionDir;
@@ -110,7 +115,7 @@ export function loadDemoEnv(exampleDir: string, baseEnv: NodeJS.ProcessEnv): Rpc
 		childEnv.PI_DEMO_PI_ARGS && childEnv.PI_DEMO_PI_ARGS.trim().length > 0
 			? splitArgs(childEnv.PI_DEMO_PI_ARGS)
 			: [
-					"src/cli.ts",
+					"../coding-agent/src/cli.ts",
 					"--mode",
 					"rpc",
 					"--no-session",

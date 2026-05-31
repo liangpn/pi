@@ -1,12 +1,17 @@
 import { Type } from "@earendil-works/pi-ai";
 import { defineTool, type ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { type JsonObject, loadMcpConfig, type McpToolMapping, type RpcTaskConsoleMcpConfig } from "../mcp-config.js";
+import {
+	type JsonObject,
+	loadMcpConfig,
+	type McpToolMapping,
+	type RpcTaskConsoleMcpConfig,
+} from "../src/mcp-config.js";
 import {
 	type McpContentItem,
 	type McpRemoteTool,
 	McpStreamableHttpClient,
 	type McpToolResult,
-} from "../mcp-streamable-http-client.js";
+} from "../src/mcp-streamable-http-client.js";
 
 const PERMISSIVE_PARAMETERS_SCHEMA = { type: "object", additionalProperties: true };
 

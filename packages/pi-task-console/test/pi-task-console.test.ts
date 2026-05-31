@@ -6,39 +6,32 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, test } from "vitest";
-import { ChildAgentProcess, normalizeChildLine } from "../examples/rpc-task-console/child-agent-process.js";
+import { ChildAgentProcess, normalizeChildLine } from "../src/child-agent-process.js";
 import {
 	prepareChildSettings,
 	prewarmMcpMetadataCache,
 	readPrewarmedMcpDirectToolSpecs,
-} from "../examples/rpc-task-console/child-settings.js";
-import {
-	loadDemoEnv,
-	PI_MCP_ADAPTER_PACKAGE_SOURCE,
-	type RpcTaskConsoleEnv,
-} from "../examples/rpc-task-console/env.js";
-import { createPersistenceWriter } from "../examples/rpc-task-console/persistence.js";
-import { validatePlanSteps } from "../examples/rpc-task-console/plan-validation.js";
-import { buildTaskPrompt } from "../examples/rpc-task-console/prompt-builder.js";
-import {
-	parseTaskResultFromAssistantMessage,
-	validateTaskResult,
-} from "../examples/rpc-task-console/result-validation.js";
-import { RunManager } from "../examples/rpc-task-console/run-manager.js";
-import { DEFAULT_RUNTIME_CONFIG, loadRuntimeConfig } from "../examples/rpc-task-console/runtime-config.js";
+} from "../src/child-settings.js";
+import { loadDemoEnv, PI_MCP_ADAPTER_PACKAGE_SOURCE, type RpcTaskConsoleEnv } from "../src/env.js";
+import { createPersistenceWriter } from "../src/persistence.js";
+import { validatePlanSteps } from "../src/plan-validation.js";
+import { buildTaskPrompt } from "../src/prompt-builder.js";
+import { parseTaskResultFromAssistantMessage, validateTaskResult } from "../src/result-validation.js";
+import { RunManager } from "../src/run-manager.js";
+import { DEFAULT_RUNTIME_CONFIG, loadRuntimeConfig } from "../src/runtime-config.js";
 import {
 	createRpcTaskConsoleServer,
 	formatRpcTaskConsoleListenMessage,
 	startRpcTaskConsoleServer,
-} from "../examples/rpc-task-console/server.js";
+} from "../src/server.js";
 import {
 	createMcpDirectToolsEnvValue,
 	MCP_DIRECT_TOOLS_ENV,
 	parseFutureMcpIdentity,
 	TaskDispatcher,
-} from "../examples/rpc-task-console/task-dispatcher.js";
-import { aggregateStepStatus, TaskStore } from "../examples/rpc-task-console/task-store.js";
-import { createInitialSteps, createRuntimeSteps } from "../examples/rpc-task-console/tasks.js";
+} from "../src/task-dispatcher.js";
+import { aggregateStepStatus, TaskStore } from "../src/task-store.js";
+import { createInitialSteps, createRuntimeSteps } from "../src/tasks.js";
 import type {
 	ChildAgentProcessFactoryOptions,
 	ChildAgentProcessLike,
@@ -49,7 +42,7 @@ import type {
 	TaskResult,
 	TaskRun,
 	TaskSnapshot,
-} from "../examples/rpc-task-console/types.js";
+} from "../src/types.js";
 
 const PROJECT_ROOT = fileURLToPath(new URL("../../..", import.meta.url));
 const PROJECT_LOG_DIR = join(PROJECT_ROOT, "logs");
@@ -467,16 +460,16 @@ describe("rpc task console task prompt and result validation", () => {
 
 describe("rpc task console runtime config", () => {
 	test("loads the default runtime config fixtures", () => {
-		const exampleDir = new URL("../examples/rpc-task-console/", import.meta.url);
-		const runtimeConfigPath = new URL("runtime.config.json", exampleDir);
-		const runtimeConfigExamplePath = new URL("runtime.config.example.json", exampleDir);
+		const packageDir = new URL("../", import.meta.url);
+		const runtimeConfigPath = new URL("runtime.config.json", packageDir);
+		const runtimeConfigExamplePath = new URL("runtime.config.example.json", packageDir);
 
 		expect(loadRuntimeConfig(runtimeConfigPath)).toEqual(DEFAULT_RUNTIME_CONFIG);
 		expect(loadRuntimeConfig(runtimeConfigExamplePath)).toEqual(DEFAULT_RUNTIME_CONFIG);
 	});
 
 	test("rejects missing and invalid runtime config files", () => {
-		const dir = mkdtempSync(join(tmpdir(), "rpc-task-console-"));
+		const dir = mkdtempSync(join(tmpdir(), "pi-task-console-"));
 		try {
 			expect(() => loadRuntimeConfig(join(dir, "missing-runtime.config.json"))).toThrow(/runtime config/i);
 
@@ -499,8 +492,8 @@ describe("rpc task console runtime config", () => {
 	});
 
 	test("fails env loading when the runtime config is missing or invalid", () => {
-		const missingDir = mkdtempSync(join(tmpdir(), "rpc-task-console-missing-runtime-"));
-		const invalidDir = mkdtempSync(join(tmpdir(), "rpc-task-console-invalid-runtime-"));
+		const missingDir = mkdtempSync(join(tmpdir(), "pi-task-console-missing-runtime-"));
+		const invalidDir = mkdtempSync(join(tmpdir(), "pi-task-console-invalid-runtime-"));
 		try {
 			expect(() => loadDemoEnv(missingDir, {})).toThrow(/runtime config/i);
 
@@ -519,7 +512,7 @@ describe("rpc task console runtime config", () => {
 
 describe("rpc task console env", () => {
 	test("loads custom provider details and configures the fixed MCP package adapter", () => {
-		const dir = mkdtempSync(join(tmpdir(), "rpc-task-console-"));
+		const dir = mkdtempSync(join(tmpdir(), "pi-task-console-"));
 		try {
 			writeDefaultRuntimeConfigFile(dir);
 			writeFileSync(
@@ -595,7 +588,7 @@ describe("rpc task console env", () => {
 
 			expect(demoEnv.port).toBe(4555);
 			expect(demoEnv.piArgs).toEqual([
-				"src/cli.ts",
+				"../coding-agent/src/cli.ts",
 				"--mode",
 				"rpc",
 				"--no-session",
@@ -611,6 +604,7 @@ describe("rpc task console env", () => {
 			expect(demoEnv.childEnv.PI_DEMO_MCP_CONFIG_PATH).toBe(join(dir, ".mcp.json"));
 			expect(demoEnv.childEnv.PI_DEMO_PI_MCP_CONFIG_PATH).toBe(join(dir, ".pi", "mcp.json"));
 			expect(demoEnv.childEnv.PI_DEMO_CHILD_MCP_CONFIG_PATH).toBe(join(PROJECT_LOG_DIR, "pi-agent", "mcp.json"));
+			expect(demoEnv.childEnv.NPM_CONFIG_CACHE).toBe(join(PROJECT_LOG_DIR, "npm-cache"));
 			expect(demoEnv.outputDir).toBe(PROJECT_LOG_DIR);
 			expect(demoEnv.childEnv.PI_CODING_AGENT_DIR).toBe(join(PROJECT_LOG_DIR, "pi-agent"));
 			const childSettings = JSON.parse(readFileSync(demoEnv.childSettingsPath, "utf8")) as {
@@ -632,7 +626,7 @@ describe("rpc task console env", () => {
 	});
 
 	test("formats startup logs without assuming a localhost public address", () => {
-		const dir = mkdtempSync(join(tmpdir(), "rpc-task-console-"));
+		const dir = mkdtempSync(join(tmpdir(), "pi-task-console-"));
 		try {
 			writeDefaultRuntimeConfigFile(dir);
 			writeFileSync(
@@ -656,7 +650,7 @@ describe("rpc task console env", () => {
 	});
 
 	test("generates local models.json from OpenAI-compatible .env fields", () => {
-		const dir = mkdtempSync(join(tmpdir(), "rpc-task-console-"));
+		const dir = mkdtempSync(join(tmpdir(), "pi-task-console-"));
 		try {
 			writeDefaultRuntimeConfigFile(dir);
 			writeFileSync(
@@ -691,7 +685,7 @@ describe("rpc task console env", () => {
 			expect(demoEnv.port).toBe(4555);
 			expect(demoEnv.piCommand).toBe("tsx");
 			expect(demoEnv.piArgs).toEqual([
-				"src/cli.ts",
+				"../coding-agent/src/cli.ts",
 				"--mode",
 				"rpc",
 				"--no-session",
@@ -702,6 +696,7 @@ describe("rpc task console env", () => {
 			]);
 			expect(demoEnv.outputDir).toBe(PROJECT_LOG_DIR);
 			expect(demoEnv.childEnv.PI_CODING_AGENT_DIR).toBe(join(PROJECT_LOG_DIR, "pi-agent"));
+			expect(demoEnv.childEnv.NPM_CONFIG_CACHE).toBe(join(PROJECT_LOG_DIR, "npm-cache"));
 			expect(modelsJson.providers["rpc-demo"].baseUrl).toBe("https://llm.example.test/v1");
 			expect(modelsJson.providers["rpc-demo"].api).toBe("openai-completions");
 			expect(modelsJson.providers["rpc-demo"].apiKey).toBe("OPENAI_API_KEY");
@@ -712,7 +707,7 @@ describe("rpc task console env", () => {
 	});
 
 	test("defaults to built-in OpenAI model when custom baseUrl is not configured", () => {
-		const dir = mkdtempSync(join(tmpdir(), "rpc-task-console-"));
+		const dir = mkdtempSync(join(tmpdir(), "pi-task-console-"));
 		try {
 			writeDefaultRuntimeConfigFile(dir);
 			writeFileSync(join(dir, ".env"), "OPENAI_API_KEY=test-key\nPI_DEMO_LLM_PROVIDER=rpc-demo\n");
@@ -723,8 +718,9 @@ describe("rpc task console env", () => {
 			expect(demoEnv.outputDir).toBe(PROJECT_LOG_DIR);
 			expect(demoEnv.childEnv.PI_CODING_AGENT_DIR).toBe(join(PROJECT_LOG_DIR, "pi-agent"));
 			expect(demoEnv.piCommand).toBe("../../node_modules/.bin/tsx");
+			expect(demoEnv.childEnv.NPM_CONFIG_CACHE).toBe(join(PROJECT_LOG_DIR, "npm-cache"));
 			expect(demoEnv.piArgs).toEqual([
-				"src/cli.ts",
+				"../coding-agent/src/cli.ts",
 				"--mode",
 				"rpc",
 				"--no-session",
@@ -739,7 +735,7 @@ describe("rpc task console env", () => {
 	});
 
 	test("uses selected model as the custom model list when only PI_DEMO_LLM_MODEL is set", () => {
-		const dir = mkdtempSync(join(tmpdir(), "rpc-task-console-"));
+		const dir = mkdtempSync(join(tmpdir(), "pi-task-console-"));
 		try {
 			writeDefaultRuntimeConfigFile(dir);
 			writeFileSync(
@@ -762,7 +758,7 @@ describe("rpc task console env", () => {
 			};
 
 			expect(demoEnv.piArgs).toEqual([
-				"src/cli.ts",
+				"../coding-agent/src/cli.ts",
 				"--mode",
 				"rpc",
 				"--no-session",
@@ -777,8 +773,27 @@ describe("rpc task console env", () => {
 		}
 	});
 
+	test("preserves an explicit npm cache from the environment", () => {
+		const dir = mkdtempSync(join(tmpdir(), "pi-task-console-"));
+		try {
+			writeDefaultRuntimeConfigFile(dir);
+			const configuredCacheDir = join(dir, "custom-npm-cache");
+			writeFileSync(
+				join(dir, ".env"),
+				["PI_DEMO_LLM_BASE_URL=http://localhost:9111/v1", "PI_DEMO_LLM_MODEL=demo-model"].join("\n"),
+			);
+
+			const demoEnv = loadDemoEnv(dir, { NPM_CONFIG_CACHE: configuredCacheDir });
+
+			expect(demoEnv.childEnv.NPM_CONFIG_CACHE).toBe(configuredCacheDir);
+			expect(demoEnv.childEnv.npm_config_cache).toBeUndefined();
+		} finally {
+			rmSync(dir, { recursive: true, force: true });
+		}
+	});
+
 	test("resolves derived, relative, and absolute runtime output directories", () => {
-		const dir = mkdtempSync(join(tmpdir(), "rpc-task-console-"));
+		const dir = mkdtempSync(join(tmpdir(), "pi-task-console-"));
 		const absoluteLogDir = join(dir, "absolute-logs");
 		try {
 			writeDefaultRuntimeConfigFile(dir);
@@ -810,7 +825,7 @@ describe("rpc task console env", () => {
 	});
 
 	test("fails when child sessions are enabled without a session directory", () => {
-		const dir = mkdtempSync(join(tmpdir(), "rpc-task-console-"));
+		const dir = mkdtempSync(join(tmpdir(), "pi-task-console-"));
 		try {
 			writeDefaultRuntimeConfigFile(dir);
 			writeFileSync(join(dir, ".env"), "PI_DEMO_ENABLE_CHILD_SESSION=true\n");
@@ -822,7 +837,7 @@ describe("rpc task console env", () => {
 	});
 
 	test("removes --no-session and configures a child session directory when enabled", () => {
-		const dir = mkdtempSync(join(tmpdir(), "rpc-task-console-"));
+		const dir = mkdtempSync(join(tmpdir(), "pi-task-console-"));
 		try {
 			writeDefaultRuntimeConfigFile(dir);
 			writeFileSync(
@@ -831,7 +846,7 @@ describe("rpc task console env", () => {
 					"PI_DEMO_LLM_BASE_URL=http://localhost:9111/v1",
 					"PI_DEMO_LLM_MODEL=demo-model",
 					"PI_DEMO_ENABLE_CHILD_SESSION=true",
-					"PI_DEMO_CHILD_SESSION_DIR=.rpc-task-console/sessions",
+					"PI_DEMO_CHILD_SESSION_DIR=.pi-task-console/sessions",
 				].join("\n"),
 			);
 
@@ -840,7 +855,7 @@ describe("rpc task console env", () => {
 			expect(demoEnv.enableChildSession).toBe(true);
 			expect(demoEnv.piArgs.includes("--no-session")).toBe(false);
 			expect(demoEnv.piArgs).toContain("--session-dir");
-			expect(demoEnv.piArgs).toContain(join(dir, ".rpc-task-console", "sessions"));
+			expect(demoEnv.piArgs).toContain(join(dir, ".pi-task-console", "sessions"));
 			expect(demoEnv.outputDir).toBe(PROJECT_LOG_DIR);
 			expect(demoEnv.childEnv.PI_CODING_AGENT_DIR).toBe(join(PROJECT_LOG_DIR, "pi-agent"));
 		} finally {
@@ -851,7 +866,7 @@ describe("rpc task console env", () => {
 
 describe("rpc task console child settings", () => {
 	test("writes child settings.json with retry and transport config", async () => {
-		const dir = mkdtempSync(join(tmpdir(), "rpc-task-console-"));
+		const dir = mkdtempSync(join(tmpdir(), "pi-task-console-"));
 		try {
 			writeDefaultRuntimeConfigFile(dir);
 			writeFileSync(
@@ -894,7 +909,7 @@ describe("rpc task console child settings", () => {
 
 describe("rpc task console persistence", () => {
 	test("writes snapshot, logs, rpc events, stderr tails, and conversation messages", async () => {
-		const dir = mkdtempSync(join(tmpdir(), "rpc-task-console-"));
+		const dir = mkdtempSync(join(tmpdir(), "pi-task-console-"));
 		try {
 			const writer = createPersistenceWriter({
 				snapshotDir: join(dir, "snapshots"),
@@ -963,7 +978,7 @@ describe("rpc task console MCP package adapter", () => {
 			void handleFakeMcpRequest(request, response, received, { mode: "json" });
 		});
 		const baseUrl = await listen(server);
-		const dir = mkdtempSync(join(tmpdir(), "rpc-task-console-"));
+		const dir = mkdtempSync(join(tmpdir(), "pi-task-console-"));
 		try {
 			writeDefaultRuntimeConfigFile(dir);
 			writeFileSync(
@@ -997,7 +1012,7 @@ describe("rpc task console MCP package adapter", () => {
 	});
 
 	test("fails MCP prewarm with a clear connection error", async () => {
-		const dir = mkdtempSync(join(tmpdir(), "rpc-task-console-"));
+		const dir = mkdtempSync(join(tmpdir(), "pi-task-console-"));
 		try {
 			writeDefaultRuntimeConfigFile(dir);
 			writeFileSync(
@@ -1586,7 +1601,7 @@ describe("rpc task console ChildAgentProcess", () => {
 	});
 
 	test("persists normalized rpc events and child stderr tails when output directories are configured", async () => {
-		const dir = mkdtempSync(join(tmpdir(), "rpc-task-console-"));
+		const dir = mkdtempSync(join(tmpdir(), "pi-task-console-"));
 		const rpcEventDir = join(dir, "rpc-events");
 		const childStderrDir = join(dir, "stderr");
 		const events: NormalizedChildEvent[] = [];
@@ -2639,7 +2654,7 @@ describe("rpc task console TaskDispatcher", () => {
 			void handleFakeMcpRequest(request, response, [], { mode: "json" });
 		});
 		const baseUrl = await listen(server);
-		const dir = mkdtempSync(join(tmpdir(), "rpc-task-console-"));
+		const dir = mkdtempSync(join(tmpdir(), "pi-task-console-"));
 		try {
 			const childMcpConfigPath = join(dir, "mcp.json");
 			const mcpCachePath = join(dir, "mcp-cache.json");
@@ -3008,7 +3023,7 @@ describe("rpc task console RunManager", () => {
 	});
 
 	test("persists latest snapshot, task logs, and conversation messages during a real run without duplicates", async () => {
-		const outputDir = mkdtempSync(join(tmpdir(), "rpc-task-console-run-manager-"));
+		const outputDir = mkdtempSync(join(tmpdir(), "pi-task-console-run-manager-"));
 		const manager = new RunManager({
 			steps: [
 				{
@@ -3086,7 +3101,7 @@ describe("rpc task console RunManager", () => {
 	});
 
 	test("reset clears in-memory snapshot without deleting local persistence files", async () => {
-		const outputDir = mkdtempSync(join(tmpdir(), "rpc-task-console-reset-persistence-"));
+		const outputDir = mkdtempSync(join(tmpdir(), "pi-task-console-reset-persistence-"));
 		const manager = new RunManager({
 			steps: [
 				{
@@ -3513,7 +3528,7 @@ describe("rpc task console RunManager", () => {
 			steps: plan,
 			demoEnv: createDemoEnv(undefined, {
 				enableChildSession: true,
-				childSessionDir: "/tmp/rpc-task-console-session",
+				childSessionDir: "/tmp/pi-task-console-session",
 				runtimeConfig: {
 					...DEFAULT_RUNTIME_CONFIG,
 					retry: {
@@ -3576,7 +3591,7 @@ describe("rpc task console RunManager", () => {
 			errorCode: "process_error",
 			agent: {
 				processId: 2000,
-				sessionDir: "/tmp/rpc-task-console-session",
+				sessionDir: "/tmp/pi-task-console-session",
 			},
 		});
 		expect(task?.attempts[1]).toMatchObject({
@@ -3584,7 +3599,7 @@ describe("rpc task console RunManager", () => {
 			status: "complete",
 			agent: {
 				processId: 2001,
-				sessionDir: "/tmp/rpc-task-console-session",
+				sessionDir: "/tmp/pi-task-console-session",
 			},
 		});
 		expect(task?.attempts[0]?.id).not.toBe(task?.attempts[1]?.id);
@@ -3677,7 +3692,7 @@ describe("rpc task console RunManager", () => {
 });
 
 function createDemoEnv(
-	exampleDir = mkdtempSync(join(tmpdir(), "rpc-task-console-demo-env-")),
+	exampleDir = mkdtempSync(join(tmpdir(), "pi-task-console-demo-env-")),
 	overrides: Partial<RpcTaskConsoleEnv> = {},
 ): RpcTaskConsoleEnv {
 	const childEnv: NodeJS.ProcessEnv = { ...process.env, ...overrides.childEnv };
@@ -3691,7 +3706,7 @@ function createDemoEnv(
 		piCommand: "pi",
 		piArgs: ["--mode", "rpc", "--no-session"],
 		childEnv,
-		outputDir: join(exampleDir, ".rpc-task-console"),
+		outputDir: join(exampleDir, ".pi-task-console"),
 		snapshotDir: join(exampleDir, "snapshots"),
 		logDir: join(exampleDir, "logs"),
 		rpcEventDir: join(exampleDir, "rpc-events"),
@@ -4530,7 +4545,7 @@ describe("rpc task console HTTP API", () => {
 			void handleFakeMcpRequest(request, response, received, { mode: "json" });
 		});
 		const mcpBaseUrl = await listen(mcpServer);
-		const dir = mkdtempSync(join(tmpdir(), "rpc-task-console-startup-mcp-"));
+		const dir = mkdtempSync(join(tmpdir(), "pi-task-console-startup-mcp-"));
 		let server: Server | undefined;
 		try {
 			writeDefaultRuntimeConfigFile(dir);
@@ -4574,7 +4589,7 @@ describe("rpc task console HTTP API", () => {
 	});
 
 	test("rejects startup before /runs/start can return 202 when MCP prewarm fails", async () => {
-		const dir = mkdtempSync(join(tmpdir(), "rpc-task-console-startup-mcp-fail-"));
+		const dir = mkdtempSync(join(tmpdir(), "pi-task-console-startup-mcp-fail-"));
 		try {
 			writeDefaultRuntimeConfigFile(dir);
 			writeFileSync(
@@ -4638,9 +4653,9 @@ describe("rpc task console HTTP API", () => {
 	});
 
 	test("serves the shell with real static asset files and no initial business cards", async () => {
-		const exampleDir = new URL("../examples/rpc-task-console/", import.meta.url);
-		const expectedStyles = readFileSync(new URL("styles.css", exampleDir), "utf8");
-		const expectedApp = readFileSync(new URL("app.js", exampleDir), "utf8");
+		const publicDir = new URL("../public/", import.meta.url);
+		const expectedStyles = readFileSync(new URL("styles.css", publicDir), "utf8");
+		const expectedApp = readFileSync(new URL("app.js", publicDir), "utf8");
 		const server = createRpcTaskConsoleServer(createDemoEnv(), {
 			runManager: new RunManager({
 				demoEnv: createDemoEnv(),
@@ -4673,7 +4688,7 @@ describe("rpc task console HTTP API", () => {
 
 			const configResponse = await fetch(`${baseUrl}/runtime.config.json`);
 			expect(configResponse.status).toBe(404);
-			const traversalResponse = await fetch(`${baseUrl}/../rpc-task-console/app.js`);
+			const traversalResponse = await fetch(`${baseUrl}/../pi-task-console/app.js`);
 			expect(traversalResponse.status).toBe(404);
 		} finally {
 			await closeServer(server);
@@ -5205,7 +5220,7 @@ function readJsonLines<T>(path: string): T[] {
 }
 
 function readConsoleAsset(name: "app.js" | "styles.css" | "index.html"): string {
-	return readFileSync(new URL(`../examples/rpc-task-console/${name}`, import.meta.url), "utf8");
+	return readFileSync(new URL(`../public/${name}`, import.meta.url), "utf8");
 }
 
 function extractFunctionSource(source: string, functionName: string): string {

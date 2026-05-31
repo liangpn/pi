@@ -1,14 +1,14 @@
-# RPC 任务控制台 main agent 规划 Spec
+# Pi 任务控制台 main agent 规划 Spec
 
 ## 状态
 
-本文档维护 RPC 任务控制台后续阶段的 main agent、`spawn_agent` 和 `run_workflow` 设计。
+本文档维护 Pi 任务控制台后续阶段的 main agent、`spawn_agent` 和 `run_workflow` 设计。
 
-本文档不是第一版 POC 的验收依据。第一版当前实现和验收依据仍是 `docs/superpowers/specs/spec-rpc-task-console.md`。
+本文档不是第一版 POC 的验收依据。第一版当前实现和验收依据仍是 `docs/superpowers/specs/spec-pi-task-console.md`。
 
 ## 目标
 
-后续阶段要把 RPC 任务控制台从固定 SOP runtime 扩展为面向事件和用户输入的多 agent 编排系统。
+后续阶段要把 Pi 任务控制台从固定 SOP runtime 扩展为面向事件和用户输入的多 agent 编排系统。
 
 系统必须同时支持：
 
@@ -298,6 +298,12 @@ interface WorkflowExecution extends Execution {
 
 上述接口是后续阶段设计方向，不约束第一版当前 snapshot schema。
 
+## pi-web-ui 设计参考
+
+Pi 官方历史上曾存在 `packages/web-ui` workspace，包名为 `@earendil-works/pi-web-ui`。该 workspace 已在提交 `b141e1fa2460868686ffd19c5d4ced743eee6c24` 中整体移除，提交标题为 `chore: remove web-ui workspace`。当前公开 package catalog 不应被视为 `pi-web-ui` 的延续。
+
+后续 UI 设计只保留短参考事实：可借鉴其 chat/interface 分层、message/tool renderer registry、artifact preview panel 等展示思路；不得恢复 `packages/web-ui`，也不得把任务控制台改成依赖该历史组件库。
+
 ## Steps 创建和调整
 
 main agent 可以创建或调整 `steps`，但必须受规则约束。
@@ -355,7 +361,7 @@ interface InterruptedRunSummary {
 - `run_workflow` 与正在运行 workflow 的 stop/replace/queue 关系。
 - 多个用户指令、消息事件和 workflow 同时到来时的优先级。
 - main agent 消息和 runtime task message 在 UI 中的归属和展示方式。
-- Agent Execution Core 与第一版 TaskStore 的迁移边界。
+- Agent Execution Core 与第一版 TaskStore 的衔接边界。
 - Execution Snapshot 是否替代第一版 TaskSnapshot，或先兼容并行。
 - memory 是否进入本阶段；如果进入，失败经验如何沉淀和引用。
 - 审计与回放如何基于 snapshot、RPC JSONL、task logs 和 agent run logs 重建一次执行。

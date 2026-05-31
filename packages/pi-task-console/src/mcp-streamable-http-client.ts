@@ -74,7 +74,7 @@ export class McpStreamableHttpClient {
 	}
 
 	private async connect(signal: AbortSignal | undefined): Promise<Client> {
-		const client = new Client({ name: "pi-rpc-task-console", version: "0.1.0" }, { capabilities: {} });
+		const client = new Client({ name: "pi-task-console", version: "0.1.0" }, { capabilities: {} });
 		const transport = new StreamableHTTPClientTransport(new URL(this.server.url), {
 			fetch: this.fetchFn,
 			requestInit: { headers: this.server.headers },

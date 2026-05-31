@@ -1,7 +1,7 @@
 {
   "mcpServers": {
     "caseTools": {
-      "url": "http://192.168.20.21:30080/pacc-mcp-server/mcp?toolset=shijiazhuang&clientid=zyhxx",
+      "url": "http://210.21.53.138:30080/pacc-mcp-server/mcp?toolset=shijiazhuang&clientid=zyhxx",
       "auth": false,
       "lifecycle": "lazy",
       "exposeResources": false

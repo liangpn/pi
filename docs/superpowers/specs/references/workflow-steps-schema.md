@@ -2,7 +2,7 @@
 
 ## 定位
 
-`table_plan.steps` 保存计划的执行编排和 task 输出契约。运行规则、状态机和验收标准以 `docs/superpowers/specs/spec-rpc-task-console.md` 为准。
+`table_plan.steps` 保存计划的执行编排和 task 输出契约。运行规则、状态机和验收标准以 `docs/superpowers/specs/spec-pi-task-console.md` 为准。
 
 `steps` 是计划定义，不保存运行状态、执行结果、日志、进程信息或卡片实例。
 

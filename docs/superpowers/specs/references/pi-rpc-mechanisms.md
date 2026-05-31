@@ -2,7 +2,7 @@
 
 ## 定位
 
-本文只记录 Pi 可复用机制和对任务控制台规范的技术判断。规范性要求以 `docs/superpowers/specs/spec-rpc-task-console.md` 为准。
+本文只记录 Pi 可复用机制和对任务控制台规范的技术判断。规范性要求以 `docs/superpowers/specs/spec-pi-task-console.md` 为准。
 
 ## RPC Mode
 

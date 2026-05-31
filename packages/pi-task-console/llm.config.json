@@ -1,0 +1,14 @@
+{
+  "provider": "rpc-demo",
+  "baseUrl": "https://api-inference.modelscope.cn/v1/",
+  "api": "openai-completions",
+  "apiKeyEnv": "ms-af871a61-927e-446f-82b0-e14d3b182f59",
+  "models": [
+    "Qwen/Qwen3.5-35B-A3B"
+  ],
+  "selectedModel": "Qwen/Qwen3.5-35B-A3B",
+  "compat": {
+    "supportsDeveloperRole": false,
+    "supportsReasoningEffort": false
+  }
+}

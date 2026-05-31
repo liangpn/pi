@@ -1,7 +1,7 @@
 import type { ChildProcess } from "node:child_process";
 import { randomUUID } from "node:crypto";
-import { attachJsonlLineReader, serializeJsonLine } from "../../src/modes/rpc/jsonl.js";
-import { spawnProcess } from "../../src/utils/child-process.js";
+import { spawnProcess } from "./child-process.js";
+import { attachJsonlLineReader, serializeJsonLine } from "./jsonl.js";
 import { createPersistenceWriter } from "./persistence.js";
 import type { ChildAgentProcessFactoryOptions, ChildAgentProcessLike, NormalizedChildEvent } from "./types.js";
 

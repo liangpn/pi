@@ -1,3 +1,5 @@
+#!/usr/bin/env -S node --import tsx
+
 import { readFile } from "node:fs/promises";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import { dirname, join } from "node:path";
@@ -9,15 +11,13 @@ import { validatePlanSteps } from "./plan-validation.js";
 import { RunManager, type RunManagerOptions } from "./run-manager.js";
 import type { PlanStep, TaskSnapshot } from "./types.js";
 
-const exampleDir = dirname(fileURLToPath(import.meta.url));
-const staticDir = exampleDir;
+const srcDir = dirname(fileURLToPath(import.meta.url));
+const packageDir = join(srcDir, "..");
+const staticDir = join(packageDir, "public");
 const indexHtmlPath = join(staticDir, "index.html");
 const stylesPath = join(staticDir, "styles.css");
 const appPath = join(staticDir, "app.js");
-const policeWorkflowPath = join(
-	exampleDir,
-	"../../../../docs/superpowers/specs/references/police-command-workflow.json",
-);
+const policeWorkflowPath = join(packageDir, "../../docs/superpowers/specs/references/police-command-workflow.json");
 const DEFAULT_POLICE_USER_INSTRUCTION =
 	"请以接警单编号 44010620260525085000433002 为目标，执行公安指挥处置 workflow，按阶段完成警情要素识别、基础研判、现场态势展开和出警资源可视化，并严格按各任务要求返回结果。";
 
@@ -317,7 +317,7 @@ function toErrorMessage(error: unknown): string {
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
-	const demoEnv = loadDemoEnv(exampleDir, process.env);
+	const demoEnv = loadDemoEnv(packageDir, process.env);
 	startRpcTaskConsoleServer(demoEnv)
 		.then(() => {
 			console.log(formatRpcTaskConsoleListenMessage(demoEnv));

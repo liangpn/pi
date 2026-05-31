@@ -4,7 +4,7 @@ language = "zh-CN"
 
 spec_dirs = ["docs/superpowers/specs"]
 plan_dirs = ["docs/superpowers/plans"]
-ledger_path = "docs/superpowers/ledgers/ledger-rpc-task-console.md"
+ledger_path = "docs/superpowers/ledgers/ledger-pi-task-console.md"
 
 require_user_confirmation = true
 control_plane_default = true

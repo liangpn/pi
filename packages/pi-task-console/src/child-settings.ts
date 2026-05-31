@@ -327,7 +327,7 @@ async function listRemoteMcpTools(
 		params: {
 			protocolVersion: "2025-06-18",
 			capabilities: {},
-			clientInfo: { name: "pi-rpc-task-console", version: "0.1.0" },
+			clientInfo: { name: "pi-task-console", version: "0.1.0" },
 		},
 	});
 	id += 1;

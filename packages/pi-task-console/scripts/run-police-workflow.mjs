@@ -1,7 +1,6 @@
 #!/usr/bin/env node
 
 import { readFile } from "node:fs/promises";
-import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const DEFAULT_BASE = "http://localhost:4175";
@@ -9,24 +8,34 @@ const DEFAULT_USER_INSTRUCTION =
 	"请以接警单编号 44010620260525085000433002 为目标，执行公安指挥处置 workflow，按阶段完成警情要素识别、基础研判、现场态势展开和出警资源可视化，并严格按各任务要求返回结果。";
 
 const options = parseArgs(process.argv.slice(2));
-const scriptDir = dirname(fileURLToPath(import.meta.url));
-const workflowPath = join(scriptDir, "../specs/references/police-command-workflow.json");
+const workflowPath = fileURLToPath(
+	new URL(
+		"../../../docs/superpowers/specs/references/police-command-workflow.json",
+		import.meta.url,
+	),
+);
 const steps = JSON.parse(await readFile(workflowPath, "utf8"));
-const response = await fetch(new URL("/runs/start", options.base), {
-	method: "POST",
-	headers: { "content-type": "application/json" },
-	body: JSON.stringify({
-		steps,
-		userInstruction: options.userInstruction,
-	}),
-});
-const responseText = await response.text();
+try {
+	const response = await fetch(new URL("/runs/start", options.base), {
+		method: "POST",
+		headers: { "content-type": "application/json" },
+		body: JSON.stringify({
+			steps,
+			userInstruction: options.userInstruction,
+		}),
+	});
+	const responseText = await response.text();
 
-if (!response.ok) {
-	console.error(responseText);
+	if (!response.ok) {
+		console.error(responseText);
+		process.exitCode = 1;
+	} else {
+		console.log(responseText);
+	}
+} catch (error) {
+	const message = error instanceof Error ? error.message : String(error);
+	console.error(`Failed to start workflow request: ${message}`);
 	process.exitCode = 1;
-} else {
-	console.log(responseText);
 }
 
 function parseArgs(args) {

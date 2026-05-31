@@ -1,12 +1,12 @@
-# RPC 任务控制台 Spec
+# Pi 任务控制台 Spec
 
 ## 目标
 
-RPC 任务控制台是一个基于 Pi 的主从多 agent 架构 POC。
+Pi 任务控制台是一个基于 Pi 的主从多 agent 架构 POC。
 
 核心机制是 Task Execution Runtime：它接收已选定的 `steps` 流程定义，按 step 串行、task 并行的规则创建独立 Pi RPC 子 agent 会话，跟踪 task 运行态，校验 task 结果，并把进度、任务消息和业务卡片暴露给 UI。
 
-当前可执行版本是第一版 POC。第一版从已选定的 `steps` 开始，不实现 main agent 的流程匹配、用户自然语言路由或 memory 沉淀。后续阶段设计独立维护在 `docs/superpowers/specs/spec-rpc-task-console-main-agent.md`。
+当前可执行版本是第一版 POC。第一版从已选定的 `steps` 开始，不实现 main agent 的流程匹配、用户自然语言路由或 memory 沉淀。后续阶段设计独立维护在 `docs/superpowers/specs/spec-pi-task-console-main-agent.md`。
 
 本文档是第一版当前实现和验收依据；后续阶段文档不作为第一版验收依据。
 
@@ -735,9 +735,9 @@ PI_DEMO_RUNTIME_CONFIG=runtime.config.json
 
 配置规则：
 
-- 默认输出目录位于项目根目录 `logs/`，不再写入 example 目录下的 `.rpc-task-console/`。
+- 默认输出目录位于项目根目录 `logs/`。
 - `PI_DEMO_OUTPUT_DIR` 是默认输出根目录；默认值按项目根目录解析为 `logs/`。
-- 显式配置的相对输出路径必须按项目根目录解析，避免运行产物散落到 example 源码目录。
+- 显式配置的相对输出路径必须按项目根目录解析，避免运行产物散落到源码目录。
 - 未单独配置的输出目录从 `PI_DEMO_OUTPUT_DIR` 派生。
 - 日志、snapshot、RPC events、conversation messages 必须可以通过配置输出到不同目录。
 - `PI_DEMO_CHILD_AGENT_DIR` 用作 child Pi RPC process 的 `PI_CODING_AGENT_DIR`。
@@ -772,13 +772,11 @@ logs/
 - `rpc-events/<run-uuid>/<agent-uuid>.jsonl` 中的 `agent-uuid` 是 runtime 为 child agent/attempt 分配的稳定关联 ID。
 - 每条 JSON record 内保留 `runId`、`agentId`、`stepId`、`taskId`、`attemptId` 等字段用于定位。
 - `snapshot` 文件可以反复覆盖当前 run 最新状态；`logs`、`conversation`、`rpc-events` 使用 JSONL append。
-- 旧的 `packages/coding-agent/examples/rpc-task-console/.rpc-task-console/` 属于历史 demo 运行产物，可安全删除；不得依赖该目录作为新默认输出位置。
-
 ## MCP 和工具权限
 
 MCP 接入采用 `pi-mcp-adapter@2.8.0`。该 package 是 Pi extension，不是 Task Console runtime；它只能替换 MCP 接入层，不能替代 TaskDispatcher、TaskStore、SSE、cards、stop/replace、retry、持久化和结果校验。
 
-第一版继续使用 subprocess RPC runtime。`AgentSession` / SDK 嵌入式调用是后续候选方向，不作为第一版 MCP package 迁移的前提。
+第一版继续使用 subprocess RPC runtime。`AgentSession` / SDK 嵌入式调用是后续候选方向，不作为第一版前提。
 
 MCP package 接入规则：
 
@@ -790,7 +788,7 @@ MCP package 接入规则：
 - 默认单一 `mcp` proxy 工具必须禁用，且不得加入 task allowlist。
 - demo server 启动阶段必须执行 MCP tool discovery / metadata cache prewarm。
 - metadata cache prewarm 失败时，server 启动必须失败并输出配置错误；不得等到 child agent 执行过程中才发现 direct tools 未注册。
-- package 迁移目标是降低自维护 MCP 接入代码，不是已确认修复真实 MCP tool `terminated`。
+- MCP 接入目标是降低自维护 MCP client / schema 代码，不是已确认修复真实 MCP tool `terminated`。
 
 工具权限规则：
 
@@ -801,7 +799,7 @@ MCP package 接入规则：
 - Adapter/package 层必须保留第二道限制，避免 proxy fallback 或额外 direct tools 绕过 task allowlist。
 - 当前 POC 可以暂用无前缀 tool name 以兼容现有公安 workflow。
 - 长期 tool identity 必须支持 MCP server name/id 前缀，建议格式为 `$mcp_server_name:tool_name`；后续 task `tools` 字段也应按该格式设计，以支持多个 MCP server 来源并避免 tool name 冲突。
-- 当前 demo adapter 文件应退出 active path：`mcp-config.ts`、`mcp-streamable-http-client.ts`、`extensions/mcp-tools.ts`。是否删除这些文件由实施计划决定。
+- 任务控制台默认 MCP 接入不得依赖自维护 MCP client 或手写 MCP tool schema；默认 schema 来源应来自 `pi-mcp-adapter` metadata / remote tools discovery。
 
 ## HTTP 和实时 API
 
@@ -823,7 +821,7 @@ Routes：
 - 顶部右上角提供“测试”按钮。
 - “测试”按钮读取当前指令输入框内容，并用公安 workflow JSON 作为预置 `steps` 调用 `/runs/start`。
 - 如果指令输入框为空，前端弹框提示，不启动 run。
-- 指令输入框默认文本必须与 `docs/superpowers/plans/run-police-workflow.mjs` 的默认 `userInstruction` 一致。
+- 指令输入框默认文本必须与 `packages/pi-task-console/scripts/run-police-workflow.mjs` 的默认 `userInstruction` 一致。
 - HTTP start、stop、replace routes 的 runtime 语义不因“测试”按钮改变。
 - 冷启动或 reset 后如果没有当前选定 workflow，`/api/snapshot` 和 SSE 最新 snapshot 中的 `run.steps` 必须为空数组。
 - `/runs/reset` 空 body 时回到当前已选定 workflow 的 idle snapshot；如果当前没有已选定 workflow，则保持空 `steps`，不得回退到旧 demo fixture。
@@ -913,7 +911,7 @@ UI 是公安指挥工作流的高密度操作控制台，不是营销页。
 
 人工验收辅助脚本：
 
-- `docs/superpowers/plans/run-police-workflow.mjs` 作为命令行验收入口。
+- `packages/pi-task-console/scripts/run-police-workflow.mjs` 作为命令行验收入口。
 - 脚本读取 `docs/superpowers/specs/references/police-command-workflow.json`。
 - 脚本默认使用与前端指令输入框一致的 `userInstruction`。
 - 脚本把 `steps + userInstruction` 写入 `/runs/start` 请求 JSON，不创建或修改 workflow 参考 JSON 文件。
@@ -966,7 +964,7 @@ UI 是公安指挥工作流的高密度操作控制台，不是营销页。
 - 指令输入框随内容高度自动调整。
 - 智能协同侧栏桌面宽度增至既有宽度的 1.5 倍，同时保持窄屏无横向滚动。
 - `run-police-workflow.mjs` 使用同一默认 `userInstruction` 触发公安 workflow。
-- MCP 接入测试必须覆盖 `pi-mcp-adapter@2.8.0` 固定加载、`directTools` 启用、proxy `mcp` 禁用、metadata cache prewarm、task allowlist 多层强制和旧 demo adapter 退出 active path。
+- MCP 接入测试必须覆盖 `pi-mcp-adapter@2.8.0` 固定加载、`directTools` 启用、proxy `mcp` 禁用、metadata cache prewarm、task allowlist 多层强制，以及默认接入不依赖自维护 MCP client / 手写 MCP schema。
 
 ## 参考文档
 

@@ -1,0 +1,41 @@
+{
+	"name": "@ning/pi-task-console",
+	"private": true,
+	"version": "0.75.3",
+	"description": "RPC task console package for Pi workflows",
+	"type": "module",
+	"bin": {
+		"pi-task-console": "./src/server.ts"
+	},
+	"scripts": {
+		"dev": "tsx src/server.ts",
+		"run:police-workflow": "node ./scripts/run-police-workflow.mjs",
+		"test": "npx tsx ../../node_modules/vitest/dist/cli.js --run test/pi-task-console.test.ts"
+	},
+	"pi": {
+		"extensions": [
+			"./extensions/mcp-tools.ts"
+		],
+		"skills": [
+			"./skills"
+		],
+		"prompts": [
+			"./prompts"
+		]
+	},
+	"dependencies": {
+		"@modelcontextprotocol/sdk": "^1.29.0",
+		"cross-spawn": "^7.0.6",
+		"pi-mcp-adapter": "2.8.0"
+	},
+	"devDependencies": {
+		"tsx": "^4.20.3"
+	},
+	"peerDependencies": {
+		"@earendil-works/pi-ai": "^0.75.3",
+		"@earendil-works/pi-coding-agent": "^0.75.3"
+	},
+	"engines": {
+		"node": ">=22.19.0"
+	}
+}
