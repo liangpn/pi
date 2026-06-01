@@ -1,0 +1,999 @@
+<!doctype html>
+<!--
+Huashu Design v3 Junior pass
+
+Assumptions:
+- This is a high-fidelity scenario prototype for product explanation, not package implementation.
+- The existing task-console-v2-layouts.html structure is the source composition: card workspace + side collaboration panel + floating command dock.
+- main agent is not a persistent visible actor. It may appear only as a message source after user instruction.
+- First-version runtime semantics remain steps -> tasks -> messages -> cards. Future queue/history/main-agent behavior is shown as product-complete interaction design.
+
+Design rules:
+- Do not expose engineering labels such as map/text/media/card_type/workflow run/spawn_agent.
+- A selected execution item highlights the corresponding process row, message, and business card when a card exists.
+- Failed execution produces no success card; it highlights the failed row, the failure message, and binds the command dock.
+- The side panel shell stays stable across 协作 / 待办 / 历史; only the content layer changes.
+-->
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>警情处置控制台 v3 原型</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        --bg: #0a0e0d;
+        --paper: #eef2ec;
+        --ink: #f0f5ef;
+        --text: #dbe5dc;
+        --muted: #94a59a;
+        --faint: #69776f;
+        --panel: #111916;
+        --panel-2: #17221e;
+        --panel-3: #1d2a25;
+        --line: #2c3b35;
+        --line-soft: #22302b;
+        --green: #87c8a6;
+        --green-soft: rgba(135, 200, 166, 0.13);
+        --amber: #caa35b;
+        --amber-soft: rgba(202, 163, 91, 0.16);
+        --red: #d96b5f;
+        --red-soft: rgba(217, 107, 95, 0.16);
+        --blue: #87b7c8;
+        --shadow: 0 30px 90px rgba(0, 0, 0, 0.48);
+        --sans: "PingFang SC", "Microsoft YaHei", "Noto Sans SC", system-ui, sans-serif;
+        --mono: "SFMono-Regular", "Cascadia Mono", ui-monospace, monospace;
+      }
+
+      * { box-sizing: border-box; }
+      html, body { min-height: 100%; }
+      body {
+        margin: 0;
+        background: var(--bg);
+        color: var(--text);
+        font-family: var(--sans);
+        letter-spacing: 0;
+        overflow: hidden;
+      }
+      button, textarea { font: inherit; }
+      button { cursor: pointer; }
+      button:focus-visible, [tabindex]:focus-visible, textarea:focus-visible {
+        outline: 2px solid var(--green);
+        outline-offset: 2px;
+      }
+
+      .app {
+        position: relative;
+        display: grid;
+        grid-template-rows: 52px minmax(0, 1fr);
+        height: 100vh;
+        min-width: 0;
+        overflow: hidden;
+        background:
+          linear-gradient(180deg, rgba(238, 242, 236, 0.035), transparent 280px),
+          radial-gradient(circle at 14% -10%, rgba(202, 163, 91, 0.1), transparent 31%),
+          var(--bg);
+      }
+      .topbar {
+        display: grid;
+        grid-template-columns: 230px minmax(0, 1fr) auto;
+        align-items: center;
+        gap: 12px;
+        padding: 0 16px;
+        border-bottom: 1px solid var(--line); cursor: grab; user-select: none;
+        background: rgba(9, 13, 12, 0.9);
+      }
+      .brand, .run-actions, .incident, .pill, .icon-btn, .seg {
+        display: flex;
+        align-items: center;
+      }
+      .brand { gap: 10px; min-width: 0; }
+      .seal {
+        display: grid;
+        place-items: center;
+        width: 30px;
+        height: 30px;
+        border: 1px solid #526057;
+        border-radius: 7px;
+        color: var(--paper);
+        background: #151d1a;
+        font-weight: 900;
+        font-size: 14px;
+      }
+      .brand h1 { margin: 0; font-size: 15px; line-height: 1.1; color: var(--ink); }
+      .brand small { display: block; margin-top: 3px; color: var(--faint); font-size: 10px; }
+      .incident { min-width: 0; justify-content: center; gap: 10px; }
+      .incident strong {
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        font-size: 14px;
+        color: var(--ink);
+      }
+      .incident span { color: var(--muted); font-size: 12px; font-family: var(--mono); }
+      .run-actions { gap: 8px; }
+      .pill {
+        gap: 8px;
+        min-height: 30px;
+        padding: 0 10px;
+        border: 1px solid var(--line);
+        border-radius: 999px;
+        color: var(--text);
+        background: #111916;
+        font-size: 12px;
+      }
+      .pulse, .state-dot {
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        background: var(--green);
+        box-shadow: 0 0 0 4px rgba(135, 200, 166, 0.14);
+      }
+      .icon-btn {
+        justify-content: center;
+        width: 32px;
+        height: 32px;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        color: var(--text);
+        background: #121b18;
+      }
+      .icon-btn:hover, .tab:hover { border-color: #526057; background: #18231f; }
+
+      .workspace {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) clamp(360px, 31vw, 510px);
+        min-height: 0;
+        overflow: hidden;
+      }
+      .workspace.left-docked {
+        grid-template-columns: clamp(360px, 31vw, 510px) minmax(0, 1fr);
+      }
+      .workspace.left-docked .cards { order: 2; }
+      .workspace.left-docked .side {
+        order: 1;
+        border-left: 0;
+        border-right: 1px solid var(--line);
+      }
+      .workspace.panel-collapsed { grid-template-columns: minmax(0, 1fr) 0; }
+      .workspace.left-docked.panel-collapsed { grid-template-columns: 0 minmax(0, 1fr); }
+      .cards {
+        position: relative;
+        min-width: 0;
+        min-height: 0;
+        padding: 16px;
+        overflow: auto;
+      }
+      .card-summary {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto;
+        gap: 12px;
+        align-items: end;
+        margin-bottom: 14px;
+      }
+      .empty-state {
+        display: none;
+        min-height: 420px;
+        border: 1px dashed var(--line);
+        border-radius: 14px;
+        place-items: center;
+        padding: 32px;
+        color: var(--muted);
+        background:
+          linear-gradient(rgba(135,200,166,0.04) 1px, transparent 1px),
+          linear-gradient(90deg, rgba(135,200,166,0.04) 1px, transparent 1px),
+          rgba(17, 25, 22, 0.5);
+        background-size: 42px 42px;
+        text-align: center;
+      }
+      .empty-state h2 {
+        margin: 0 0 8px;
+        color: var(--ink);
+        font-size: 18px;
+      }
+      .empty-state p {
+        margin: 0;
+        max-width: 420px;
+        font-size: 13px;
+        line-height: 1.7;
+      }
+      .preflight #cardGrid { display: none; }
+      .preflight .empty-state { display: grid; }
+      .preflight .panel.active { display: none; }
+      .preflight .side::after {
+        content: "等待警情事件进入。处置开始后，这里将展示处置动态、预案进程、待办和历史。";
+        position: absolute;
+        inset: 48px 0 0;
+        display: grid;
+        place-items: center;
+        padding: 32px;
+        color: var(--muted);
+        text-align: center;
+        line-height: 1.7;
+        font-size: 13px;
+      }
+      .card-summary h2 { margin: 0 0 6px; color: var(--ink); font-size: 20px; }
+      .card-summary p { margin: 0; color: var(--muted); font-size: 13px; }
+      .grid {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(250px, 1fr));
+        gap: 12px;
+        align-items: stretch;
+      }
+      .business-card {
+        position: relative;
+        display: grid;
+        grid-template-rows: auto minmax(0, 1fr);
+        min-height: 208px;
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        overflow: hidden;
+        background: linear-gradient(180deg, rgba(255,255,255,0.025), transparent), var(--panel);
+        box-shadow: inset 0 1px 0 rgba(255,255,255,0.035);
+      }
+      .business-card.selected {
+        border-color: var(--green);
+        box-shadow: 0 0 0 1px rgba(135,200,166,0.28), 0 22px 60px rgba(0,0,0,0.32);
+      }
+      .card-head {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto;
+        gap: 10px;
+        align-items: start;
+        padding: 12px 12px 10px;
+        border-bottom: 1px solid var(--line-soft);
+      }
+      .card-head h3 { margin: 0; color: var(--ink); font-size: 14px; }
+      .card-head p { margin: 5px 0 0; color: var(--muted); font-size: 12px; line-height: 1.45; }
+      .card-actions { display: flex; gap: 6px; }
+      .mini-btn {
+        width: 26px;
+        height: 26px;
+        border: 1px solid var(--line);
+        border-radius: 7px;
+        color: var(--muted);
+        background: #111916;
+      }
+      .card-body { min-height: 0; padding: 12px; }
+      .map {
+        position: relative;
+        height: 100%;
+        min-height: 132px;
+        border: 1px solid #33443d;
+        border-radius: 8px;
+        overflow: hidden;
+        background:
+          linear-gradient(rgba(135,200,166,0.07) 1px, transparent 1px),
+          linear-gradient(90deg, rgba(135,200,166,0.07) 1px, transparent 1px),
+          #0d1513;
+        background-size: 34px 34px;
+      }
+      .road { position: absolute; height: 1px; background: rgba(238,242,236,0.24); transform-origin: left; }
+      .pin {
+        position: absolute;
+        display: grid;
+        place-items: center;
+        width: 28px;
+        height: 28px;
+        border-radius: 50%;
+        color: #07100d;
+        background: var(--green);
+        font-size: 12px;
+        font-weight: 900;
+        box-shadow: 0 0 0 6px rgba(135,200,166,0.13);
+      }
+      .video-wall {
+        display: grid;
+        grid-template-columns: repeat(2, 1fr);
+        gap: 8px;
+        height: 100%;
+        min-height: 132px;
+      }
+      .feed {
+        position: relative;
+        border: 1px solid #33443d;
+        border-radius: 8px;
+        background:
+          linear-gradient(135deg, rgba(135,183,200,0.18), transparent 48%),
+          repeating-linear-gradient(0deg, rgba(255,255,255,0.03), rgba(255,255,255,0.03) 1px, transparent 1px, transparent 5px),
+          #101714;
+        overflow: hidden;
+      }
+      .feed span {
+        position: absolute;
+        left: 8px;
+        bottom: 7px;
+        color: var(--muted);
+        font-size: 10px;
+        font-family: var(--mono);
+      }
+      .action-list, .profile, .resource-table, .receipt { display: grid; gap: 8px; }
+      .action-row, .profile-row, .receipt-row {
+        border: 1px solid var(--line-soft);
+        border-radius: 8px;
+        padding: 9px 10px;
+        background: #0e1714;
+        color: var(--text);
+        font-size: 12px;
+        line-height: 1.5;
+      }
+      .resource-table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 12px;
+      }
+      .resource-table th, .resource-table td {
+        border-bottom: 1px solid var(--line-soft);
+        padding: 9px 6px;
+        text-align: left;
+      }
+      .resource-table th { color: var(--muted); font-weight: 700; }
+      .resource-table td { color: var(--text); }
+
+      .side {
+        position: relative;
+        display: grid;
+        grid-template-rows: 48px minmax(0, 1fr);
+        min-width: 0;
+        min-height: 0;
+        border-left: 1px solid var(--line);
+        background: rgba(12, 17, 15, 0.96);
+        overflow: hidden;
+      }
+      .side-head {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto;
+        gap: 8px;
+        align-items: center;
+        padding: 8px;
+        border-bottom: 1px solid var(--line);
+      }
+      .tabs { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px; }
+      .tab {
+        border: 1px solid transparent;
+        border-radius: 8px;
+        padding: 7px 4px;
+        color: var(--muted);
+        background: transparent;
+        font-size: 12px;
+      }
+      .tab.active {
+        color: var(--ink);
+        border-color: #405149;
+        background: #17211d;
+      }
+      .side-actions { display: flex; gap: 6px; }
+      .panel {
+        display: none;
+        min-height: 0;
+        overflow: hidden;
+        animation: panelIn 180ms ease both;
+      }
+      .panel.active { display: grid; }
+      .collab { grid-template-rows: minmax(0, 1.25fr) 9px minmax(0, 0.75fr); }
+      .pane { min-height: 0; overflow: hidden; display: grid; grid-template-rows: auto minmax(0, 1fr); }
+      .pane-head {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 12px 12px 8px;
+      }
+      .pane-head h3 { margin: 0; color: var(--ink); font-size: 13px; }
+      .pane-head span { color: var(--muted); font-size: 11px; }
+      .stream, .process, .queue-list, .history-list {
+        display: grid;
+        align-content: start;
+        gap: 8px;
+        min-height: 0;
+        overflow: auto;
+        padding: 0 10px 12px;
+      }
+      .stream {
+        position: relative;
+        gap: 0;
+      }
+      .process { padding-bottom: 72px; }
+      .stream::before {
+        content: "";
+        position: absolute;
+        left: 72px;
+        top: 4px;
+        bottom: 14px;
+        width: 1px;
+        background: linear-gradient(180deg, transparent, var(--line), transparent);
+      }
+      .message {
+        position: relative;
+        display: grid;
+        grid-template-columns: 50px 22px minmax(0, 1fr);
+        gap: 10px;
+        border: 0;
+        border-radius: 0;
+        padding: 8px 0 12px;
+        background: transparent;
+        text-align: left;
+      }
+      .message.selected {
+        background: linear-gradient(90deg, transparent, rgba(135,200,166,0.08));
+      }
+      .message.fail {
+        background: linear-gradient(90deg, transparent, rgba(217,107,95,0.09));
+      }
+      .time {
+        color: var(--amber);
+        font-family: var(--mono);
+        font-size: 11px;
+        letter-spacing: 0.02em;
+        padding-top: 5px;
+      }
+      .actor {
+        position: relative;
+        z-index: 1;
+        display: grid;
+        place-items: center;
+        width: 22px;
+        height: 22px;
+        border: 1px solid var(--line);
+        border-radius: 50%;
+        color: var(--muted);
+        background: #101815;
+        font-size: 11px;
+      }
+      .message.task-message .actor { color: #08110d; border-color: var(--green); background: var(--green); }
+      .message.user-message .actor { color: var(--amber); border-color: var(--amber); background: #17130b; }
+      .message.agent-message .actor { color: var(--blue); border-color: var(--blue); background: #0d171a; }
+      .message.fail .actor { color: #1e0c09; border-color: var(--red); background: var(--red); }
+      .msg-copy {
+        border: 1px solid var(--line-soft);
+        border-radius: 9px;
+        padding: 8px 9px;
+        background: #101815;
+      }
+      .msg-copy strong {
+        display: block;
+        color: var(--ink);
+        font-size: 12px;
+      }
+      .msg-copy p { margin: 5px 0 0; color: var(--text); font-size: 12px; line-height: 1.55; }
+      .splitter {
+        display: grid;
+        place-items: center;
+        color: var(--faint);
+        border-block: 1px solid var(--line-soft);
+        background: #0e1512;
+        font-size: 10px;
+      }
+      .phase {
+        border: 1px solid var(--line-soft);
+        border-radius: 10px;
+        overflow: hidden;
+        background: #0f1714;
+      }
+      .phase-title {
+        display: flex;
+        justify-content: space-between;
+        padding: 8px 9px;
+        color: var(--muted);
+        font-size: 11px;
+        border-bottom: 1px solid var(--line-soft);
+      }
+      .task {
+        display: grid;
+        grid-template-columns: 22px minmax(0, 1fr);
+        gap: 8px;
+        align-items: center;
+        width: 100%;
+        border: 0;
+        border-top: 1px solid var(--line-soft);
+        padding: 10px 9px;
+        color: var(--text);
+        text-align: left;
+        background: transparent;
+      }
+      .task:first-of-type { border-top: 0; }
+      .task.selected { background: rgba(135,200,166,0.09); }
+      .task.failed { background: rgba(217,107,95,0.08); }
+      .glyph {
+        display: grid;
+        place-items: center;
+        width: 20px;
+        height: 20px;
+        border-radius: 50%;
+        border: 1px solid var(--line);
+        color: var(--muted);
+        font-size: 11px;
+      }
+      .done .glyph { color: #102018; background: var(--green); border-color: var(--green); }
+      .running .glyph { color: var(--amber); border-color: var(--amber); box-shadow: 0 0 0 4px var(--amber-soft); }
+      .failed .glyph { color: #1e0c09; background: var(--red); border-color: var(--red); }
+      .task h4 {
+        margin: 0;
+        color: var(--ink);
+        font-size: 12px;
+        font-weight: 800;
+        line-height: 1.35;
+      }
+
+      .list-panel { grid-template-rows: auto minmax(0, 1fr); }
+      .queue-item, .history-item {
+        display: grid;
+        grid-template-columns: 10px minmax(0, 1fr);
+        gap: 10px;
+        border: 1px solid var(--line-soft);
+        border-radius: 10px;
+        padding: 10px;
+        background: #101815;
+      }
+      .queue-item.selected, .history-item.selected {
+        border-color: var(--green);
+        background: rgba(135,200,166,0.08);
+      }
+      .queue-item.declined { opacity: 0.55; }
+      .status-bar {
+        width: 4px;
+        border-radius: 999px;
+        background: var(--line);
+      }
+      .queue-item.active .status-bar { background: var(--green); }
+      .queue-item.waiting .status-bar { background: var(--amber); }
+      .queue-item.declined .status-bar { background: var(--faint); }
+      .item-copy strong {
+        display: flex;
+        justify-content: space-between;
+        gap: 8px;
+        color: var(--ink);
+        font-size: 12px;
+      }
+      .item-copy p { margin: 6px 0 0; color: var(--muted); font-size: 12px; line-height: 1.45; }
+      .item-meta {
+        display: flex;
+        gap: 8px;
+        margin-top: 8px;
+        color: var(--faint);
+        font-size: 11px;
+      }
+      .detail-strip {
+        margin: 0 10px 10px;
+        border: 1px solid var(--line-soft);
+        border-radius: 10px;
+        padding: 10px;
+        color: var(--muted);
+        background: #0e1512;
+        font-size: 12px;
+        line-height: 1.55;
+      }
+
+      .event-card {
+        position: absolute;
+        right: 24px;
+        bottom: 24px;
+        z-index: 20;
+        width: min(420px, calc(100vw - 48px));
+        border: 1px solid rgba(202,163,91,0.52);
+        border-radius: 14px;
+        background: rgba(18, 23, 18, 0.96);
+        box-shadow: var(--shadow);
+        padding: 14px;
+        transform: translateY(18px);
+        opacity: 0;
+        pointer-events: none;
+        transition: 220ms ease;
+      }
+      .event-card.show { transform: translateY(0); opacity: 1; pointer-events: auto; }
+      .event-kicker {
+        display: flex;
+        justify-content: space-between;
+        color: var(--amber);
+        font-size: 11px;
+        font-family: var(--mono);
+      }
+      .event-card h2 { margin: 10px 0 7px; color: var(--ink); font-size: 17px; }
+      .event-card p { margin: 0; color: var(--muted); font-size: 13px; line-height: 1.6; }
+      .event-actions { display: flex; gap: 8px; margin-top: 14px; }
+      .primary-btn, .ghost-btn {
+        border: 1px solid var(--line);
+        border-radius: 9px;
+        padding: 8px 12px;
+        color: var(--text);
+        background: #151f1b;
+      }
+      .primary-btn { color: #07100d; background: var(--green); border-color: var(--green); font-weight: 800; }
+      .ghost-btn:hover { border-color: #526057; background: #18231f; }
+
+      .dock-zone {
+        position: absolute;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        height: 88px;
+        z-index: 12;
+      }
+      .command-dock {
+        position: absolute;
+        left: 50%;
+        bottom: 18px;
+        z-index: 13;
+        display: grid;
+        grid-template-columns: auto minmax(260px, 620px) auto;
+        gap: 10px;
+        align-items: center;
+        width: min(900px, calc(100vw - 48px));
+        border: 1px solid #526057;
+        border-radius: 16px;
+        padding: 10px;
+        background: rgba(14, 20, 17, 0.97);
+        box-shadow: var(--shadow);
+        transform: translate(-50%, 118%);
+        opacity: 0;
+        transition: 220ms ease;
+      }
+      .command-dock.show, .dock-zone:hover + .command-dock, .command-dock:focus-within {
+        transform: translate(-50%, 0);
+        opacity: 1;
+      }
+      .context-chip {
+        max-width: 220px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        border: 1px solid var(--line);
+        border-radius: 999px;
+        padding: 8px 10px;
+        color: var(--ink);
+        background: #121b18;
+        font-size: 12px;
+      }
+      textarea {
+        width: 100%;
+        max-height: 92px;
+        min-height: 38px;
+        resize: none;
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        padding: 9px 10px;
+        color: var(--ink);
+        background: #0d1412;
+      }
+      .dock-tools { display: flex; gap: 7px; }
+      .max-card {
+        position: absolute;
+        inset: 72px calc(clamp(360px,31vw,510px) + 18px) 84px 18px;
+        z-index: 10;
+        display: none;
+        border: 1px solid var(--green);
+        border-radius: 12px;
+        background: var(--panel);
+        box-shadow: var(--shadow);
+        overflow: hidden;
+      }
+      .max-card.show { display: grid; grid-template-rows: auto minmax(0, 1fr); }
+      .rail {
+        position: absolute;
+        right: 0;
+        top: 42%;
+        display: none;
+        writing-mode: vertical-rl;
+        border: 1px solid var(--line);
+        border-right: 0;
+        border-radius: 10px 0 0 10px;
+        padding: 12px 7px;
+        color: var(--muted);
+        background: #111916;
+        font-size: 12px;
+      }
+      .panel-collapsed .rail { display: block; }
+      .left-docked.panel-collapsed .rail {
+        left: 0;
+        right: auto;
+        border-left: 0;
+        border-right: 1px solid var(--line);
+        border-radius: 0 10px 10px 0;
+      }
+
+      @keyframes panelIn {
+        from { opacity: 0; transform: translateX(8px); }
+        to { opacity: 1; transform: translateX(0); }
+      }
+      @media (max-width: 1120px) {
+        .workspace { grid-template-columns: minmax(0, 1fr); }
+        .side { position: absolute; top: 52px; right: 0; bottom: 0; width: min(510px, 94vw); z-index: 9; box-shadow: var(--shadow); }
+        .grid { grid-template-columns: repeat(2, minmax(240px, 1fr)); }
+        .max-card { inset: 76px 18px 90px 18px; }
+      }
+      @media (max-width: 700px) {
+        body { overflow: auto; }
+        .app { grid-template-rows: auto minmax(0, 1fr); min-height: 100vh; height: auto; overflow: visible; }
+        .topbar { grid-template-columns: 1fr auto; height: auto; padding: 10px; }
+        .incident { grid-column: 1 / -1; justify-content: flex-start; }
+        .workspace { display: block; overflow: visible; }
+        .cards { overflow: visible; padding: 12px; }
+        .grid { grid-template-columns: 1fr; }
+        .side { position: relative; inset: auto; width: auto; min-height: 660px; }
+        .command-dock { grid-template-columns: 1fr; bottom: 10px; }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        *, *::before, *::after { animation: none !important; transition: none !important; }
+      }
+    </style>
+  </head>
+  <body>
+    <main class="app preflight" id="app">
+      <header class="topbar">
+        <div class="brand">
+          <div class="seal">警</div>
+          <div><h1>警情处置控制台</h1><small>Pi 协同执行原型 · v3</small></div>
+        </div>
+        <div class="incident"><strong id="incidentTitle">等待警情事件进入</strong><span id="incidentId">CH-20260601-000</span></div>
+        <div class="run-actions">
+          <div class="pill" id="runPill"><span class="pulse"></span><span>待接入</span></div>
+          <button class="icon-btn" id="notifyBtn" type="button" aria-label="模拟新警情">!</button>
+          <button class="icon-btn" id="resetBtn" type="button" aria-label="重置演示">↻</button>
+          <button class="icon-btn" id="collapseBtn" type="button" aria-label="收起或展开智能协同">›</button>
+        </div>
+      </header>
+
+      <section class="workspace" id="workspace">
+        <section class="cards" aria-label="业务卡片工作区">
+          <div class="card-summary">
+            <div>
+              <h2 id="summaryTitle">处置结果工作区</h2>
+              <p id="summaryCopy">点击右下角警情事件，进入处置流程。业务卡片只在任务形成可视结果后出现。</p>
+            </div>
+          </div>
+
+          <div class="empty-state">
+            <div>
+              <h2>等待警情事件</h2>
+              <p>新的消息事件会从右下角进入。选择处置后，控制台才展开业务卡片、协作动态和预案指引。</p>
+            </div>
+          </div>
+
+          <div class="grid" id="cardGrid">
+            <article class="business-card selected" data-link="location" tabindex="0">
+              <div class="card-head"><div><h3>事发地址定位</h3><p>南广场西侧落客区，事故点已落位。</p></div><div class="card-actions"><button class="mini-btn" aria-label="收起事发地址定位">⌃</button><button class="mini-btn" data-max="location" aria-label="最大化事发地址定位">□</button></div></div>
+              <div class="card-body"><div class="map"><i class="road" style="left:12%;top:32%;width:78%;transform:rotate(8deg)"></i><i class="road" style="left:20%;top:68%;width:66%;transform:rotate(-12deg)"></i><span class="pin" style="left:48%;top:38%">警</span><span class="pin" style="left:28%;top:59%;background:var(--amber)">车</span></div></div>
+            </article>
+            <article class="business-card" data-link="plan" tabindex="0">
+              <div class="card-head"><div><h3>处置预案</h3><p>交通事故先期处置流程，等待资源确认。</p></div><div class="card-actions"><button class="mini-btn" aria-label="收起处置预案">⌃</button><button class="mini-btn" data-max="plan" aria-label="最大化处置预案">□</button></div></div>
+              <div class="card-body"><div class="action-list"><div class="action-row">控制现场通行，确认是否存在人员受伤。</div><div class="action-row">同步调度周边警力、监控和执法仪画面。</div><div class="action-row">若现场态势扩大，追加周边道路管控。</div></div></div>
+            </article>
+            <article class="business-card" data-link="camera" tabindex="0">
+              <div class="card-head"><div><h3>周边监控</h3><p>路口、落客区、广场入口画面已接入。</p></div><div class="card-actions"><button class="mini-btn" aria-label="收起周边监控">⌃</button><button class="mini-btn" data-max="camera" aria-label="最大化周边监控">□</button></div></div>
+              <div class="card-body"><div class="video-wall"><div class="feed"><span>CAM-07</span></div><div class="feed"><span>CAM-12</span></div><div class="feed"><span>CAM-18</span></div><div class="feed"><span>CAM-21</span></div></div></div>
+            </article>
+            <article class="business-card" data-link="profile" tabindex="0">
+              <div class="card-head"><div><h3>报警人背景</h3><p>联系人信息已关联既往报警记录。</p></div><div class="card-actions"><button class="mini-btn" aria-label="收起报警人背景">⌃</button><button class="mini-btn" data-max="profile" aria-label="最大化报警人背景">□</button></div></div>
+              <div class="card-body"><div class="profile"><div class="profile-row">李某某 · 138****6201</div><div class="profile-row">近 90 日同区域报警 2 次。</div><div class="profile-row">现场描述与车辆碰撞类警情匹配。</div></div></div>
+            </article>
+            <article class="business-card" data-link="resource" tabindex="0">
+              <div class="card-head"><div><h3>周边警力</h3><p>可调资源按距离和响应状态排序。</p></div><div class="card-actions"><button class="mini-btn" aria-label="收起周边警力">⌃</button><button class="mini-btn" data-max="resource" aria-label="最大化周边警力">□</button></div></div>
+              <div class="card-body"><table class="resource-table"><tr><th>资源</th><th>状态</th><th>距离</th></tr><tr><td>巡组 01</td><td>在岗</td><td>0.4km</td></tr><tr><td>警车 A7</td><td>出警</td><td>1.2km</td></tr><tr><td>铁骑 03</td><td>可调</td><td>2.5km</td></tr></table></div>
+            </article>
+          </div>
+        </section>
+        <aside class="side" aria-label="智能协同侧栏">
+          <div class="side-head">
+            <div class="tabs" role="tablist" aria-label="智能协同页面">
+              <button class="tab active" type="button" data-tab="collab" role="tab">协作</button>
+              <button class="tab" type="button" data-tab="queue" role="tab">待办</button>
+              <button class="tab" type="button" data-tab="history" role="tab">历史</button>
+            </div>
+            <div class="side-actions"><button class="icon-btn" id="dockBtn" type="button" aria-label="打开指令坞">⌘</button><button class="icon-btn" id="dockSideBtn" type="button" aria-label="切换侧栏左右吸附">⇄</button><button class="icon-btn" id="sideCollapseBtn" type="button" aria-label="收起侧栏">›</button></div>
+          </div>
+
+          <div class="panel collab active" id="collabPanel" role="tabpanel">
+            <section class="pane"><div class="pane-head"><h3>处置动态</h3></div><div class="stream" id="messageList" aria-live="polite"></div></section>
+            <div class="splitter">⋮⋮⋮</div>
+            <section class="pane"><div class="pane-head"><h3>预案指引</h3></div><div class="process" id="processList"></div></section>
+          </div>
+          <div class="panel list-panel" id="queuePanel" role="tabpanel">
+            <div class="pane-head"><h3>待办警情</h3></div>
+            <div class="queue-list" id="queueList"></div>
+          </div>
+
+          <div class="panel list-panel" id="historyPanel" role="tabpanel">
+            <div class="pane-head"><h3>历史会话</h3></div>
+            <div class="history-list" id="historyList"></div>
+          </div>
+        </aside>
+        <button class="rail" id="rail" type="button">智能协同</button>
+      </section>
+
+      <article class="event-card show" id="eventCard" aria-live="polite">
+        <div class="event-kicker"><span>14:20:18 · 新警情事件</span><span>CH01-20260601</span></div>
+        <h2>南广场交通事故</h2>
+        <p>报警人称落客区两车碰撞，现场通行受阻。事件已携带处置流程，可直接进入工作台。</p>
+        <div class="event-actions"><button class="primary-btn" id="acceptEvent" type="button">处置</button><button class="ghost-btn" id="declineEvent" type="button">不处置</button></div>
+      </article>
+
+      <div class="dock-zone" aria-hidden="true"></div>
+      <form class="command-dock" id="commandDock">
+        <div class="context-chip" id="dockContext">南广场交通事故</div>
+        <textarea id="commandInput" rows="1" placeholder="输入纠正指令、补充材料或临时协查要求"></textarea>
+        <div class="dock-tools"><button class="icon-btn" type="button" title="添加附件" aria-label="添加附件">＋</button><button class="icon-btn" type="button" title="临时协查" aria-label="临时协查">⌕</button><button class="icon-btn" type="button" title="重新处置" aria-label="重新处置">↻</button><button class="icon-btn" type="submit" title="发送" aria-label="发送指令">↑</button></div>
+      </form>
+
+      <article class="max-card" id="maxCard" aria-label="最大化业务卡片">
+        <div class="card-head"><div><h3 id="maxTitle">事发地址定位</h3><p id="maxSub">最大化只覆盖卡片工作区，智能协同侧栏保持可用。</p></div><div class="card-actions"><button class="mini-btn" id="closeMax" aria-label="关闭最大化">×</button></div></div>
+        <div class="card-body"><div class="map"><i class="road" style="left:8%;top:36%;width:84%;transform:rotate(7deg)"></i><i class="road" style="left:12%;top:64%;width:78%;transform:rotate(-10deg)"></i><span class="pin" style="left:49%;top:39%">警</span><span class="pin" style="left:32%;top:58%;background:var(--amber)">车</span><span class="pin" style="left:66%;top:62%;background:var(--blue)">像</span></div></div>
+      </article>
+    </main>
+
+    <script>
+      const tasks = [
+        { id: "facts", phase: "警情要素识别", title: "提取出警设备和人员", note: "已形成警情要素摘要", status: "done", message: "系统已识别报警人、事发位置和出警资源线索。", card: null },
+        { id: "location", phase: "基础研判", title: "根据事发地址定位", note: "已落位事故点", status: "done", message: "事发点位于南广场西侧落客区，周边道路通行受阻。", card: "location" },
+        { id: "plan", phase: "基础研判", title: "查询处置预案", note: "已匹配交通事故先期处置", status: "done", message: "已匹配交通事故先期处置流程，建议优先确认人员伤情与道路通行。", card: "plan" },
+        { id: "camera", phase: "现场态势展开", title: "打开事发地周边监控", note: "四路画面接入", status: "done", message: "周边监控已接入，画面覆盖路口、落客区和广场入口。", card: "camera" },
+        { id: "resource", phase: "现场态势展开", title: "打开事发地周边警力", note: "可调资源已排序", status: "running", message: "周边警力资源刷新中，当前最近巡组距离 0.4km。", card: "resource" },
+        { id: "car", phase: "出警资源可视化", title: "跟踪出警警车", note: "设备暂不可用，等待补充", status: "failed", message: "警车设备暂不可用，无法完成轨迹跟踪。可补充设备编号后重试。", card: null }
+      ];
+      const queue = [
+        { id: "q1", state: "active", title: "南广场交通事故", time: "14:20", copy: "当前正在处置，已进入工作台。", meta: ["接警单 CH01"] },
+        { id: "q2", state: "waiting", title: "人员聚集预警", time: "14:35", copy: "等待当前事件完成后处理。", meta: ["重点区域"] },
+        { id: "q3", state: "waiting", title: "重点设施告警", time: "14:50", copy: "已进入队列，需人工确认是否处置。", meta: ["设施告警"] },
+        { id: "q4", state: "declined", title: "群众求助记录", time: "15:02", copy: "用户选择不处置，保留记录。", meta: ["关闭记录"] }
+      ];
+      const history = [
+        { id: "h1", title: "南广场交通事故", state: "处置中", copy: "包含消息 18 条、业务卡片 5 张、处置过程快照。", meta: ["14:20", "当前演示"] },
+        { id: "h2", title: "人员聚集预警", state: "已停止", copy: "用户中止后转人工跟进，保留当时卡片和消息。", meta: ["昨日", "转人工"] },
+        { id: "h3", title: "重点设施告警", state: "已完成", copy: "临时协查后关闭，可复用为新警情上下文。", meta: ["05-31", "已归档"] }
+      ];
+      const byId = (id) => document.getElementById(id);
+      let selectedTask = "location";
+      let accepted = false;
+      let selectedHistory = "h1";
+      let selectedQueue = "q1", sideDragStart = null;
+      const manualMessages = [];
+
+      function setRunState(state) {
+        const pill = byId("runPill");
+        const text = pill.querySelector("span:last-child");
+        text.textContent = state;
+        pill.querySelector(".pulse").style.background = state === "待补救" ? "var(--red)" : state === "待接入" ? "var(--amber)" : state === "已停止" ? "var(--faint)" : "var(--green)";
+      }
+
+      function renderMessages() {
+        const taskMessages = tasks.map((task) => ({ ...task, actor: "task", messageId: task.id }));
+        byId("messageList").innerHTML = [...taskMessages, ...manualMessages].map((task, index) => `
+          <button class="message ${task.actor}-message ${task.id === selectedTask ? "selected" : ""} ${task.status === "failed" ? "fail" : ""}" ${task.actor === "task" ? `data-select="${task.id}"` : ""} type="button" aria-label="${task.title}">
+            <span class="time">14:${String(21 + index * 3).padStart(2, "0")}</span>
+            <span class="actor">${task.actor === "user" ? "我" : task.actor === "agent" ? "A" : task.status === "failed" ? "!" : "✓"}</span>
+            <span class="msg-copy"><strong>${task.title}</strong><p>${task.message}</p></span>
+          </button>`).join("");
+      }
+
+      function renderProcess() {
+        const phases = [...new Set(tasks.map((task) => task.phase))];
+        byId("processList").innerHTML = phases.map((phase) => {
+          const group = tasks.filter((task) => task.phase === phase);
+          const done = group.filter((task) => task.status === "done").length;
+          return `<section class="phase"><div class="phase-title"><span>${phase}</span><span>${done}/${group.length}</span></div>${group.map((task) => `
+            <button class="task ${task.status} ${task.id === selectedTask ? "selected" : ""}" data-select="${task.id}" type="button" aria-label="${task.title}，${task.status}">
+              <span class="glyph">${task.status === "done" ? "✓" : task.status === "failed" ? "×" : "◌"}</span>
+              <span><h4>${task.title}</h4></span>
+            </button>`).join("")}</section>`;
+        }).join("");
+      }
+
+      function renderLists() {
+        byId("queueList").innerHTML = queue.map((item, index) => `
+          <button class="queue-item ${item.state} ${item.id === selectedQueue ? "selected" : ""}" type="button" data-queue="${item.id}">
+            <span class="status-bar"></span><span class="item-copy"><strong><span>${item.title}</span><span>${item.time}</span></strong><p>${item.copy}</p><span class="item-meta">${item.meta.map((m) => `<span>${m}</span>`).join("")}</span></span>
+          </button>`).join("");
+        byId("historyList").innerHTML = history.map((item, index) => `
+          <button class="history-item ${item.id === selectedHistory ? "selected" : ""}" type="button" data-history="${item.id}">
+            <span class="status-bar"></span><span class="item-copy"><strong><span>${item.title}</span><span>${item.state}</span></strong><p>${item.copy}</p><span class="item-meta">${item.meta.map((m) => `<span>${m}</span>`).join("")}</span></span>
+          </button>`).join("");
+      }
+
+      function selectTask(id, dock = false) {
+        selectedTask = id;
+        const task = tasks.find((item) => item.id === id);
+        document.querySelectorAll("[data-link]").forEach((card) => card.classList.toggle("selected", card.dataset.link === task.card));
+        renderMessages();
+        renderProcess();
+        const selectedMessage = byId("messageList").querySelector(".message.selected");
+        if (selectedMessage) byId("messageList").scrollTop = selectedMessage.offsetTop - byId("messageList").offsetTop - 8;
+        byId("dockContext").textContent = task.status === "failed" ? `${task.title} · 需处理` : task.title;
+        byId("commandDock").classList.toggle("show", dock || task.status === "failed");
+        if (task.status === "failed") setRunState("待补救");
+      }
+
+      function switchTab(tab) {
+        document.querySelectorAll(".tab").forEach((item) => item.classList.toggle("active", item.dataset.tab === tab));
+        document.querySelectorAll(".panel").forEach((item) => item.classList.toggle("active", item.id === `${tab}Panel`));
+        if (!accepted) return;
+        if (tab !== "collab") byId("commandDock").classList.remove("show");
+        if (tab === "history") {
+          const record = history.find((item) => item.id === selectedHistory);
+          setRunState(record.state);
+          byId("incidentTitle").textContent = record.title; byId("incidentId").textContent = record.meta[0];
+          byId("summaryTitle").textContent = record.title;
+          byId("summaryCopy").textContent = record.copy;
+          return;
+        }
+        byId("incidentTitle").textContent = "南广场交通事故 · 西侧落客区"; byId("incidentId").textContent = "CH01-20260601";
+        byId("summaryTitle").textContent = "处置结果工作区";
+        byId("summaryCopy").textContent = tab === "queue"
+          ? "待办页用于处理后续进入的警情事件，当前卡片区保持正在处置的警情快照。"
+          : "处置流程已接入；选择进程、消息或业务卡片可查看联动关系。";
+        const task = tasks.find((item) => item.id === selectedTask);
+        setRunState(task?.status === "failed" ? "待补救" : "处置中");
+      }
+
+      function enterWorkspace() {
+        accepted = true;
+        byId("app").classList.remove("preflight");
+        byId("eventCard").classList.remove("show");
+        byId("incidentTitle").textContent = "南广场交通事故 · 西侧落客区";
+        byId("incidentId").textContent = "CH01-20260601";
+        byId("summaryCopy").textContent = "处置流程已接入；选择进程、消息或业务卡片可查看联动关系。";
+        setRunState("处置中");
+        switchTab("collab");
+        selectTask("location");
+      }
+
+      renderMessages();
+      renderProcess();
+      renderLists();
+      document.addEventListener("click", (event) => {
+        const select = event.target.closest("[data-select]");
+        if (select) selectTask(select.dataset.select, true);
+        const card = event.target.closest("[data-link]");
+        if (card) {
+          const task = tasks.find((item) => item.card === card.dataset.link);
+          if (task) selectTask(task.id);
+        }
+        const tab = event.target.closest("[data-tab]");
+        if (tab) switchTab(tab.dataset.tab);
+        const queueTarget = event.target.closest("[data-queue]");
+        if (queueTarget) {
+          selectedQueue = queueTarget.dataset.queue;
+          renderLists();
+        }
+        const historyTarget = event.target.closest("[data-history]");
+        if (historyTarget) {
+          selectedHistory = historyTarget.dataset.history;
+          renderLists();
+          switchTab("history");
+        }
+        const max = event.target.closest("[data-max]");
+        if (max) {
+          event.stopPropagation();
+          byId("maxTitle").textContent = max.closest(".business-card").querySelector("h3").textContent;
+          byId("maxCard").classList.add("show");
+        }
+      });
+      byId("acceptEvent").addEventListener("click", enterWorkspace);
+      byId("declineEvent").addEventListener("click", () => {
+        byId("eventCard").classList.remove("show");
+        setRunState("待接入");
+        switchTab("queue");
+      });
+      byId("notifyBtn").addEventListener("click", () => byId("eventCard").classList.add("show"));
+      byId("resetBtn").addEventListener("click", () => location.reload());
+      byId("dockBtn").addEventListener("click", () => byId("commandDock").classList.add("show"));
+      byId("dockSideBtn").addEventListener("click", () => byId("workspace").classList.toggle("left-docked"));
+      document.querySelector(".side-head").addEventListener("pointerdown", (event) => { if (!event.target.closest("button")) sideDragStart = event.clientX; });
+      document.querySelector(".side-head").addEventListener("pointerup", (event) => { if (sideDragStart !== null && Math.abs(event.clientX - sideDragStart) > 48) byId("workspace").classList.toggle("left-docked", event.clientX < window.innerWidth / 2); sideDragStart = null; });
+      byId("collapseBtn").addEventListener("click", () => byId("workspace").classList.toggle("panel-collapsed"));
+      byId("sideCollapseBtn").addEventListener("click", () => byId("workspace").classList.toggle("panel-collapsed"));
+      byId("rail").addEventListener("click", () => byId("workspace").classList.remove("panel-collapsed"));
+      byId("closeMax").addEventListener("click", () => byId("maxCard").classList.remove("show"));
+      byId("commandInput").addEventListener("input", (event) => {
+        event.target.style.height = "auto";
+        event.target.style.height = `${Math.min(event.target.scrollHeight, 92)}px`;
+      });
+      byId("commandDock").addEventListener("submit", (event) => {
+        event.preventDefault();
+        const input = byId("commandInput");
+        if (!input.value.trim()) return;
+        manualMessages.push({ id: `cmd-${Date.now()}`, actor: "user", title: "用户指令", status: "done", message: input.value.trim(), card: null });
+        input.value = "";
+        renderMessages();
+      });
+    </script>
+  </body>
+</html>
