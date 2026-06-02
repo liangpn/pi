@@ -6,7 +6,7 @@ Pi 任务控制台是一个基于 Pi 的主从多 agent 架构 POC。
 
 核心机制是 Task Execution Runtime：它接收已选定的 `steps` 流程定义，按 step 串行、task 并行的规则创建独立 Pi RPC 子 agent 会话，跟踪 task 运行态，校验 task 结果，并把进度、任务消息和业务卡片暴露给 UI。
 
-当前可执行版本是第一版 POC。第一版从已选定的 `steps` 开始，不实现 main agent 的流程匹配、用户自然语言路由或 memory 沉淀。后续阶段设计独立维护在 `docs/superpowers/specs/spec-pi-task-console-main-agent.md`。
+当前可执行版本是第一版 POC。第一版从已选定的 `steps` 开始，不实现 main agent 的流程匹配、用户自然语言路由或 memory 沉淀。后续阶段设计独立维护在 `docs/superpowers/specs/spec-pi-task-console-v2.md`。
 
 本文档是第一版当前实现和验收依据；后续阶段文档不作为第一版验收依据。
 
@@ -91,12 +91,20 @@ interface PlanTask {
   id: string;
   title: string;
   description: string;
-  tools?: string[];
+  tools?: ToolRef[];
   skills?: string[];
   retry?: TaskRetryPolicy;
   card_type?: CardType;
   data_structure?: DataField[];
   demoOutcome?: "normal" | "force_fail_after_run";
+}
+
+interface ToolRef {
+  server_url: string;
+  toolset: string;
+  tool_name: string;
+  tool_title: string;
+  tool_description: string;
 }
 
 interface TaskRetryPolicy {
@@ -797,8 +805,8 @@ MCP package 接入规则：
 - MCP 接入最终实现必须保留 task allowlist 语义。
 - Pi CLI / AgentSession 的 `tools` allowlist 是主防线。
 - Adapter/package 层必须保留第二道限制，避免 proxy fallback 或额外 direct tools 绕过 task allowlist。
-- 当前 POC 可以暂用无前缀 tool name 以兼容现有公安 workflow。
-- 长期 tool identity 必须支持 MCP server name/id 前缀，建议格式为 `$mcp_server_name:tool_name`；后续 task `tools` 字段也应按该格式设计，以支持多个 MCP server 来源并避免 tool name 冲突。
+- 当前 POC 的 task `tools` 必须使用 `ToolRef[]`，其中 `tool_name` 作为 Pi 工具 allowlist 的稳定匹配键。
+- 长期 tool identity 必须支持多个 MCP server 来源；运行时应结合 `server_url`、`toolset` 和 `tool_name` 约束来源并避免 tool name 冲突。
 - 任务控制台默认 MCP 接入不得依赖自维护 MCP client 或手写 MCP tool schema；默认 schema 来源应来自 `pi-mcp-adapter` metadata / remote tools discovery。
 
 ## HTTP 和实时 API
@@ -838,7 +846,7 @@ SSE 要求：
 
 UI 是公安指挥工作流的高密度操作控制台，不是营销页。
 
-当前优先布局遵循 `docs/superpowers/specs/references/task-console-ui-reference.md`：
+当前优先布局遵循 `docs/superpowers/specs/references/pi-task-console-ui-design-v1.md`：
 
 - 顶部标题栏展示产品名称。
 - 业务卡片工作区占据智能协同侧栏之外的主区域。
@@ -900,7 +908,7 @@ UI 是公安指挥工作流的高密度操作控制台，不是营销页。
 
 ## POC 工作流示例
 
-当前业务化 test workflow 位于 `docs/superpowers/specs/references/police-command-workflow.json`，包含：
+当前业务化 test workflow 位于 `docs/superpowers/specs/references/steps.json`，包含：
 
 - `step_incident_facts`：识别警情要素和出警资源。
 - `step_basic_assessment`：定位事发地址、定位坐标、查询报警人背景、查询处置预案、打开可调资源面板。
@@ -912,7 +920,7 @@ UI 是公安指挥工作流的高密度操作控制台，不是营销页。
 人工验收辅助脚本：
 
 - `packages/pi-task-console/scripts/run-police-workflow.mjs` 作为命令行验收入口。
-- 脚本读取 `docs/superpowers/specs/references/police-command-workflow.json`。
+- 脚本读取 `docs/superpowers/specs/references/steps.json`。
 - 脚本默认使用与前端指令输入框一致的 `userInstruction`。
 - 脚本把 `steps + userInstruction` 写入 `/runs/start` 请求 JSON，不创建或修改 workflow 参考 JSON 文件。
 - 脚本不包含 snapshot 轮询逻辑；运行状态通过浏览器 UI、`GET /api/snapshot` 或输出日志查看。
@@ -969,7 +977,7 @@ UI 是公安指挥工作流的高密度操作控制台，不是营销页。
 ## 参考文档
 
 - `docs/superpowers/specs/references/pi-rpc-mechanisms.md`
-- `docs/superpowers/specs/references/workflow-steps-schema.md`
-- `docs/superpowers/specs/references/police-command-workflow.json`
-- `docs/superpowers/specs/references/task-console-ui-reference.md`
-- `docs/superpowers/specs/references/task-console-ui-wireframe.html`
+- `docs/superpowers/specs/references/steps-schema.md`
+- `docs/superpowers/specs/references/steps.json`
+- `docs/superpowers/specs/references/pi-task-console-ui-design-v1.md`
+- `docs/superpowers/specs/references/pi-task-console-ui-prototype-v1.html`

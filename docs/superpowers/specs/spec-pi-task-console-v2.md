@@ -1,10 +1,10 @@
-# Pi 任务控制台 main agent 规划 Spec
+# Pi 任务控制台 v2 Spec
 
 ## 状态
 
 本文档维护 Pi 任务控制台后续阶段的 main agent、`spawn_agent` 和 `run_workflow` 设计。
 
-本文档不是第一版 POC 的验收依据。第一版当前实现和验收依据仍是 `docs/superpowers/specs/spec-pi-task-console.md`。
+本文档不是第一版 POC 的验收依据。第一版当前实现和验收依据仍是 `docs/superpowers/specs/spec-pi-task-console-v1.md`。
 
 ## 目标
 
@@ -59,6 +59,177 @@
 
 消息事件和用户指令的区别在于输入形态和 tool selection 规则，不在于是否绕过 main agent。
 
+## 当前 UI 和交互设计记录
+
+以下记录来自 v2 原型评审，后续深入设计以本文档为准。
+
+### 侧边区域吸附和收纳
+
+侧边区域右上角的左右吸附按钮可以保留，但收纳态也必须支持左右拖拽能力。
+
+要求：
+
+- 展开态：拖拽侧边区域顶部可在左侧和右侧之间吸附。
+- 收纳态：浮动把手也必须可拖拽到左侧或右侧。
+- 吸附方向只改变侧边区域位置，不改变当前协作、待办、历史内容状态。
+- 左侧固定细栏始终固定在最左侧，侧边区域吸附到左侧时位于细栏右侧。
+
+### task 状态表达
+
+处置动态中的 task 行不展示可见中文状态 label。状态由 icon、节点形态、边框、透明度和颜色表达。
+
+状态语义仍必须存在于数据和可访问属性中：
+
+- `waiting`：等待。
+- `processing`：进行中。
+- `done`：已完成。
+- `failed`：失败。
+- `stopped`：已停止。
+
+UI 可以在 `aria-label`、tooltip 或详情层中保留中文状态，但默认行内不显示“等待 / 执行中 / 已完成 / 失败”等文字 label。
+
+### 指令输入和用户身份
+
+指令输入框参考 Codex App composer：
+
+- 大圆角深色输入容器。
+- 上传文件、麦克风转录、发送按钮在同一个 composer 内。
+- 上传文件和麦克风转录是输入辅助控件，不应变成独立的强动作按钮。
+- 发送按钮是主要动作。
+
+用户新发出的指令在协作流中统一显示为“我”，不使用“张”或指挥长姓名作为用户头像文本。
+
+### 预案匹配步骤
+
+警情消息通知和处置动态之间需要增加一个独立步骤：“根据警情匹配预案指引”。
+
+流程：
+
+```text
+警情消息通知
+  -> 根据警情匹配预案指引
+    -> 返回 steps
+      -> 渲染处置动态
+    -> 返回空
+      -> 显示暂未匹配到预案
+      -> 不渲染处置动态整块
+```
+
+“根据警情匹配预案指引”不是普通 task 行，也不是用户消息。它是 main agent / tool selection 阶段的系统动作，应在 UI 上独立表达。
+
+## 协作流消息数据模型方向
+
+v2 协作流不能把所有内容都粗暴等同为聊天消息。前后端需要用统一 timeline item 承载不同来源，同时保留可区分的类型。
+
+推荐草案：
+
+```ts
+type TimelineActor = "system" | "user" | "main_agent" | "workflow" | "tool" | "task";
+
+type TimelineItem =
+  | IncidentNoticeItem
+  | PlanMatchItem
+  | WorkflowProgressItem
+  | TaskFailureItem
+  | UserCommandItem
+  | AgentMessageItem
+  | ToolCallItem
+  | CardCreatedItem;
+
+interface TimelineBase {
+  id: string;
+  incident_id: string;
+  run_id?: string;
+  created_at: string;
+  actor: TimelineActor;
+  title: string;
+}
+
+interface IncidentNoticeItem extends TimelineBase {
+  type: "incident_notice";
+  actor: "system";
+  commander_name?: string;
+  summary: string;
+}
+
+interface PlanMatchItem extends TimelineBase {
+  type: "plan_match";
+  actor: "main_agent" | "tool";
+  status: "processing" | "matched" | "empty" | "failed";
+  matched_steps?: PlanStep[];
+  message?: string;
+}
+
+interface WorkflowProgressItem extends TimelineBase {
+  type: "workflow_progress";
+  actor: "workflow";
+  workflow_run_id: string;
+  steps: RuntimeStep[];
+}
+
+interface TaskFailureItem extends TimelineBase {
+  type: "task_failure";
+  actor: "task";
+  workflow_run_id: string;
+  task_id: string;
+  attempt_id?: string;
+  message: string;
+}
+
+interface UserCommandItem extends TimelineBase {
+  type: "user_command";
+  actor: "user";
+  text: string;
+  referenced_task_id?: string;
+  attachments?: AttachmentRef[];
+  transcript_source?: "typed" | "microphone";
+}
+
+interface AgentMessageItem extends TimelineBase {
+  type: "agent_message";
+  actor: "main_agent" | "tool";
+  text: string;
+  tool_name?: "spawn_agent" | "run_workflow" | string;
+  related_agent_run_id?: string;
+  related_workflow_run_id?: string;
+}
+
+interface ToolCallItem extends TimelineBase {
+  type: "tool_call";
+  actor: "tool";
+  tool_call_id: string;
+  tool_name: string;
+  tool_title?: string;
+  status: "running" | "complete" | "failed";
+  related_agent_run_id: string;
+  related_workflow_run_id?: string;
+  related_task_id?: string;
+  input_summary?: string;
+  output_summary?: string;
+  error_message?: string;
+  card_ids?: string[];
+}
+
+interface CardCreatedItem extends TimelineBase {
+  type: "card_created";
+  actor: "task" | "tool";
+  card_id: string;
+  task_id?: string;
+  tool_call_id?: string;
+}
+```
+
+UI 渲染原则：
+
+- `incident_notice` 渲染为警情消息通知。
+- `plan_match` 渲染为“根据警情匹配预案指引”；`empty` 时显示“暂未匹配到预案”，并且不渲染 `workflow_progress`。
+- `workflow_progress` 渲染为处置动态 steps。
+- `task_failure` 可以内联到对应 task 下方，也可以作为失败详情节点。
+- `user_command` 渲染为“我”的指令消息。
+- `agent_message` 渲染为系统/agent 回复，但不暴露底层实现字段给普通用户。
+- `tool_call` 渲染为一次工具调用过程。每次工具调用都必须有独立 timeline item，用于表达 running、complete、failed，以及可选的卡片关联。
+- `card_created` 不一定需要单独显示为消息；通常更新卡片区即可。
+
 ## UI 队列和历史
 
 后续阶段的智能协同侧栏应以 tabs 组织：
@@ -107,11 +278,19 @@ main agent 第一批只暴露两个核心工具：
 interface SpawnAgentInput {
   instruction: string;
   agent_type?: string;
-  tools?: string[];
+  tools?: ToolRef[];
   skills?: string[];
   output_contract?: OutputContract;
   context?: unknown;
   metadata?: Record<string, unknown>;
+}
+
+interface ToolRef {
+  server_url: string;
+  toolset: string;
+  tool_name: string;
+  tool_title: string;
+  tool_description: string;
 }
 
 interface SpawnAgentOutput {
@@ -127,6 +306,45 @@ interface SpawnAgentOutput {
 - `tools` 是本次 agent run 的工具 allowlist，不是提示词建议。
 - `output_contract` 有值时，Agent Execution Core 必须在写入结果前执行结构校验。
 - `spawn_agent` 不包含 step 串行、task 并行、workflow progress 等 SOP 语义。
+
+### MCP tool card metadata
+
+MCP server 侧的单个 tool metadata 应支持声明 `card_type`。这是 tool 自身的展示能力声明，不是 `steps` 的输入字段。
+
+设计动机：
+
+- task 是多步工具调用任务，第一版 POC 已支持 task 级 `card_type` 和 `data_structure` 来生成卡片。
+- v2 中 main agent 或 `spawn_agent` 可能只调用一个业务 tool 就完成用户目标，例如“打开某某某地址”可以直接调用地图相关 tool，并用地图卡片展示结果。
+- tool 本身已有 `outputSchema`，因此 tool 级卡片不应再要求 `data_structure`。
+
+metadata 方向：
+
+```ts
+interface McpToolMetadata {
+  server_url: string;
+  toolset: string;
+  tool_name: string;
+  tool_title: string;
+  tool_description: string;
+  card_type?: CardType;
+}
+```
+
+规则：
+
+- `card_type` 必须由 MCP server 的 tool discovery / metadata 提供，不写入 `steps.json` 的 `ToolRef`。
+- tool result 必须满足 tool `outputSchema` 和对应 `card_type` renderer contract；只有输入 schema 不足以生成卡片。
+- 一次 agent run 内每一次 tool call 都必须形成独立 `tool_call` timeline item。
+- 如果一个 tool call 的 metadata 声明了 `card_type`，且 tool result 满足对应 renderer contract，则该 tool call 可以生成 UI card。
+- 一次 agent run 中多个 tool call 都声明了 `card_type` 且结果合法时，可以分别生成多张 card。
+- tool call 生成 card 后，`tool_call.card_ids` 记录关联 card；卡片区展示真实 card，协作流可只展示工具调用过程和关联状态。
+
+card type 优先级：
+
+1. `task.card_type`：当 tool call 属于 workflow task，且 task 声明了 `card_type` 时，以 task 级 card contract 为准。task 内部 tool metadata 的 `card_type` 只保留为 metadata，不参与该 task 的卡片类型决策。
+2. `output_contract.card_type`：当 agent invocation 显式给出 output contract 时，以 output contract 为准。
+3. `McpToolMetadata.card_type`：当没有 task 级或 output contract 级 card contract 时，可以使用 tool metadata 的 `card_type`。
+4. 无匹配 card contract 时不生成 card。
 
 ### run_workflow
 
@@ -211,8 +429,10 @@ Agent Execution Core 是 `spawn_agent` 和 `run_workflow` 的共享底层。
 - 跟踪 agent run 状态。
 - 管理 attempts、retry、timeout、stop、abort、kill。
 - 捕获 RPC events、stderr tail、process id、close code 和 signal。
+- 将每一次 tool call 转换为 `tool_call` timeline item。
 - 解析 final assistant result。
 - 按 Output Contract 校验结果。
+- 按 card type 优先级写入 cards，并建立 tool call / task / card 关联。
 - 写入 logs、diagnostics、messages、cards 和 persistence。
 - 向 Execution Snapshot 发布状态变化。
 
@@ -235,7 +455,7 @@ Workflow Executor 是 `run_workflow` 的内部确定性执行器。
 - 维护 workflow task 状态和 progress。
 - 把每个 task 编译成 Agent Invocation。
 - 收集 task 对应的 Agent Run 结果。
-- 根据 task `card_type`、`data_structure` 和 Output Contract 创建 UI card。
+- 根据 task `card_type`、`data_structure` 和 Output Contract 创建 UI card；task 声明 `card_type` 时，无视 task 内部 tool metadata 的 `card_type`。
 - 复用第一版 stop、replace、retry、stale event ignore、SSE 和持久化语义。
 
 Workflow Executor 不负责：
@@ -256,6 +476,7 @@ Workflow Executor 不负责：
 - logs。
 - diagnostics。
 - conversation messages。
+- tool call timeline items。
 - system receipts。
 - UI cards。
 - SSE snapshot。
@@ -356,6 +577,7 @@ interface InterruptedRunSummary {
 - main agent 的外部输入接口形态：是否使用 Pi chat 接口、HTTP endpoint，或其他 host runtime。
 - 输入 envelope 的最终 schema。
 - `spawn_agent` 和 `run_workflow` 的最终 tool schema。
+- MCP server tool metadata 的最终 card schema、renderer contract 和 discovery 兼容策略。
 - agent_type 的服务端注册、枚举和默认值。
 - main agent 创建 `steps` 时可使用哪些 tools、skills、retry 和 `data_structure`。
 - `run_workflow` 与正在运行 workflow 的 stop/replace/queue 关系。

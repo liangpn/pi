@@ -2,7 +2,7 @@
 
 ## 当前事实
 
-- Spec: `docs/superpowers/specs/spec-pi-task-console.md`
+- Spec: `docs/superpowers/specs/spec-pi-task-console-v1.md`
 - Plan: `docs/superpowers/plans/plan-pi-task-console.md`
 - Package: `packages/pi-task-console`
 - Package name: `@ning/pi-task-console`

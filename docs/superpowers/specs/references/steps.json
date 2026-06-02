@@ -8,7 +8,13 @@
                 "title": "提取出警设备和人员",
                 "description": "从警情详情中提取出警设备和人员；如果当前警情详情缺少出警设备列表，则调用 @jcj-get-case-detail@ 查询出警设备和人员信息。",
                 "tools": [
-                    "jcj-get-case-detail"
+                    {
+                        "server_url": "http://210.21.53.138:30080/pacc-mcp-server/mcp",
+                        "toolset": "shijiazhuang",
+                        "tool_name": "jcj-get-case-detail",
+                        "tool_title": "查询接警单详情",
+                        "tool_description": "查询当前警情详情、出警设备和出警人员信息。"
+                    }
                 ],
                 "skills": []
             }
@@ -23,7 +29,13 @@
                 "title": "根据事发地址检索地点",
                 "description": "根据警情详情中的事发地址调用 @panel-operate@ 检索地点位置。",
                 "tools": [
-                    "panel-operate"
+                    {
+                        "server_url": "http://210.21.53.138:30080/pacc-mcp-server/mcp",
+                        "toolset": "shijiazhuang",
+                        "tool_name": "panel-operate",
+                        "tool_title": "操作前端面板",
+                        "tool_description": "打开或检索前端业务面板，例如地点、资源和警情相关面板。"
+                    }
                 ],
                 "skills": [],
                 "card_type": "map",
@@ -57,7 +69,13 @@
                 "title": "查询报警人背景",
                 "description": "根据警情详情中的报警电话调用 @background-check@ 查询报警人姓名和人员标签。",
                 "tools": [
-                    "background-check"
+                    {
+                        "server_url": "http://210.21.53.138:30080/pacc-mcp-server/mcp",
+                        "toolset": "shijiazhuang",
+                        "tool_name": "background-check",
+                        "tool_title": "查询人员背景",
+                        "tool_description": "根据报警电话等线索查询报警人姓名、人员标签和背景信息。"
+                    }
                 ],
                 "skills": [],
                 "card_type": "text",
@@ -84,7 +102,13 @@
                 "title": "查询处置预案",
                 "description": "根据警情详情中的接警单编号调用 @getPrettyPlanInstance@ 查询当前警情处置预案。",
                 "tools": [
-                    "getPrettyPlanInstance"
+                    {
+                        "server_url": "http://210.21.53.138:30080/pacc-mcp-server/mcp",
+                        "toolset": "shijiazhuang",
+                        "tool_name": "getPrettyPlanInstance",
+                        "tool_title": "查询处置预案",
+                        "tool_description": "根据接警单编号查询当前警情匹配的处置预案内容。"
+                    }
                 ],
                 "skills": [],
                 "card_type": "text",
@@ -105,7 +129,13 @@
                 "title": "打开可调资源面板",
                 "description": "根据警情详情中的接警单编号调用 @panel-operate@ 打开当前警情可调资源面板。",
                 "tools": [
-                    "panel-operate"
+                    {
+                        "server_url": "http://210.21.53.138:30080/pacc-mcp-server/mcp",
+                        "toolset": "shijiazhuang",
+                        "tool_name": "panel-operate",
+                        "tool_title": "操作前端面板",
+                        "tool_description": "打开或检索前端业务面板，例如地点、资源和警情相关面板。"
+                    }
                 ],
                 "skills": [],
                 "card_type": "text",
@@ -135,7 +165,13 @@
                 "title": "打开事发地周边监控",
                 "description": "根据警情详情中的经纬度或事发地址调用 @device-operate@ 打开周边监控，并输出前端媒体卡片需要的监控设备 GBID 列表。",
                 "tools": [
-                    "device-operate"
+                    {
+                        "server_url": "http://210.21.53.138:30080/pacc-mcp-server/mcp",
+                        "toolset": "shijiazhuang",
+                        "tool_name": "device-operate",
+                        "tool_title": "操作设备资源",
+                        "tool_description": "打开周边监控、周边警力、执法仪或警车等设备资源。"
+                    }
                 ],
                 "skills": [],
                 "card_type": "media",
@@ -156,7 +192,13 @@
                 "title": "打开事发地周边警力",
                 "description": "根据警情详情中的经纬度或事发地址调用 @device-operate@ 打开周边警力。",
                 "tools": [
-                    "device-operate"
+                    {
+                        "server_url": "http://210.21.53.138:30080/pacc-mcp-server/mcp",
+                        "toolset": "shijiazhuang",
+                        "tool_name": "device-operate",
+                        "tool_title": "操作设备资源",
+                        "tool_description": "打开周边监控、周边警力、执法仪或警车等设备资源。"
+                    }
                 ],
                 "skills": [],
                 "card_type": "map",
@@ -192,8 +234,20 @@
                 "title": "调阅出警民警单兵或执法仪",
                 "description": "从警情出警设备中筛选单兵或执法仪设备；如果设备信息缺失，先调用 @jcj-get-case-detail@ 查询出警设备，再调用 @device-operate@ 打开设备画面。",
                 "tools": [
-                    "jcj-get-case-detail",
-                    "device-operate"
+                    {
+                        "server_url": "http://210.21.53.138:30080/pacc-mcp-server/mcp",
+                        "toolset": "shijiazhuang",
+                        "tool_name": "jcj-get-case-detail",
+                        "tool_title": "查询接警单详情",
+                        "tool_description": "查询当前警情详情、出警设备和出警人员信息。"
+                    },
+                    {
+                        "server_url": "http://210.21.53.138:30080/pacc-mcp-server/mcp",
+                        "toolset": "shijiazhuang",
+                        "tool_name": "device-operate",
+                        "tool_title": "操作设备资源",
+                        "tool_description": "打开周边监控、周边警力、执法仪或警车等设备资源。"
+                    }
                 ],
                 "skills": [],
                 "card_type": "media",
@@ -214,8 +268,20 @@
                 "title": "跟踪出警警车",
                 "description": "从警情出警设备中筛选警车设备；如果设备信息缺失，先调用 @jcj-get-case-detail@ 查询出警设备，再调用 @device-operate@ 开始跟踪出警警车。",
                 "tools": [
-                    "jcj-get-case-detail",
-                    "device-operate"
+                    {
+                        "server_url": "http://210.21.53.138:30080/pacc-mcp-server/mcp",
+                        "toolset": "shijiazhuang",
+                        "tool_name": "jcj-get-case-detail",
+                        "tool_title": "查询接警单详情",
+                        "tool_description": "查询当前警情详情、出警设备和出警人员信息。"
+                    },
+                    {
+                        "server_url": "http://210.21.53.138:30080/pacc-mcp-server/mcp",
+                        "toolset": "shijiazhuang",
+                        "tool_name": "device-operate",
+                        "tool_title": "操作设备资源",
+                        "tool_description": "打开周边监控、周边警力、执法仪或警车等设备资源。"
+                    }
                 ],
                 "skills": [],
                 "card_type": "media",

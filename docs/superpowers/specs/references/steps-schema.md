@@ -1,8 +1,8 @@
-# table_plan.steps 数据结构参考
+# steps 数据结构参考
 
 ## 定位
 
-`table_plan.steps` 保存计划的执行编排和 task 输出契约。运行规则、状态机和验收标准以 `docs/superpowers/specs/spec-pi-task-console.md` 为准。
+`table_plan.steps` 保存计划的执行编排和 task 输出契约。运行规则、状态机和验收标准以 `docs/superpowers/specs/spec-pi-task-console-v1.md` 为准。
 
 `steps` 是计划定义，不保存运行状态、执行结果、日志、进程信息或卡片实例。
 
@@ -28,7 +28,15 @@ steps JSON NOT NULL
         "id": "task_xxx",
         "title": "任务标题",
         "description": "任务描述",
-        "tools": ["device-operate"],
+        "tools": [
+          {
+            "server_url": "http://210.21.53.138:30080/pacc-mcp-server/mcp",
+            "toolset": "shijiazhuang",
+            "tool_name": "device-operate",
+            "tool_title": "操作设备资源",
+            "tool_description": "打开周边监控、周边警力、执法仪或警车等设备资源。"
+          }
+        ],
         "skills": [],
         "retry": {
           "max_attempts": 2,
@@ -69,11 +77,33 @@ steps JSON NOT NULL
 | `id` | string | 是 | Task id。同一 plan 内唯一。 |
 | `title` | string | 是 | Task 标题，也是默认卡片标题。 |
 | `description` | string | 是 | 给 child agent 的业务执行说明。 |
-| `tools` | string[] | 否 | 当前 task 可用的业务工具/MCP 工具 allowlist。 |
+| `tools` | ToolRef[] | 否 | 当前 task 可用的业务工具/MCP 工具 allowlist。 |
 | `skills` | string[] | 否 | 当前 task 启用的技能列表。 |
 | `retry` | object | 否 | Task 级重试覆盖配置。缺省字段使用 runtime 默认配置。 |
 | `card_type` | string | 否 | 卡片类型。缺省表示该 task 不创建业务卡片。 |
 | `data_structure` | array | 条件必填 | `card_type` 有值时必填，用于校验 agent 输出的 `data`。 |
+
+## ToolRef 字段
+
+`tools` 不再使用字符串数组。每个工具必须是对象，结构如下：
+
+```json
+{
+  "server_url": "http://210.21.53.138:30080/pacc-mcp-server/mcp",
+  "toolset": "shijiazhuang",
+  "tool_name": "device-operate",
+  "tool_title": "操作设备资源",
+  "tool_description": "打开周边监控、周边警力、执法仪或警车等设备资源。"
+}
+```
+
+| 字段 | 类型 | 必填 | 说明 |
+|---|---|---:|---|
+| `server_url` | string | 是 | MCP server URL，不包含临时鉴权参数时由运行时按环境补齐。 |
+| `toolset` | string | 是 | 工具所属 toolset，例如 `shijiazhuang`。 |
+| `tool_name` | string | 是 | 工具调用名，也是 allowlist 的稳定匹配键。 |
+| `tool_title` | string | 是 | 面向管理端和 UI 的工具标题。 |
+| `tool_description` | string | 是 | 工具能力说明，用于管理端展示和 prompt 构造。 |
 
 ## DataField 字段
 
@@ -123,6 +153,8 @@ json
 - 当前 step 内 tasks 独立并行执行，实际并发量受 runtime 配置控制。
 - 每个 task 对应一个独立 child Pi RPC agent attempt。
 - `tools` 缺省或为空数组时，该 task 不启用业务工具/MCP 工具。
+- `tools` 必须是 ToolRef 对象数组，不允许字符串数组。
+- runtime 执行时以 `tool_name` 作为工具 allowlist 的稳定匹配键，并可结合 `server_url`、`toolset` 做来源约束。
 - `skills` 缺省或为空数组时，该 task 不启用额外技能。
 - `card_type` 只能缺省或取支持列表中的值。
 - `card_type` 不能使用空字符串。
@@ -175,7 +207,9 @@ Agent 不返回 card title、card type 或完整 card 对象。后端根据 task
 - 每个 task 有 `id`、`title`、`description`。
 - 同一 plan 内 step id 唯一。
 - 同一 plan 内 task id 唯一。
-- `tools` 和 `skills` 是字符串数组。
+- `tools` 是 ToolRef 对象数组。
+- 每个 ToolRef 必须包含 `server_url`、`toolset`、`tool_name`、`tool_title` 和 `tool_description`。
+- `skills` 是字符串数组。
 - `retry` 字段值满足 runtime retry 约束。
 - `card_type` 缺省或合法。
 - `data_structure` 与 `card_type` 的条件关系合法。

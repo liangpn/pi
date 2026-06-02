@@ -2,7 +2,7 @@
 
 > **给 agentic workers：** 必须使用 `superpowers:subagent-driven-development`（推荐）或 `superpowers:executing-plans` 按任务执行本计划。所有步骤使用 checkbox（`- [ ]`）跟踪。
 
-**目标：** 将 `packages/pi-task-console/` 的当前 POC 对齐 `docs/superpowers/specs/spec-pi-task-console.md` 第一版规范。
+**目标：** 将 `packages/pi-task-console/` 的当前 POC 对齐 `docs/superpowers/specs/spec-pi-task-console-v1.md` 第一版规范。
 
 **架构：** 第一版实现固定 SOP `steps -> tasks` 执行链路，不实现主 agent 路由。后端 runtime 负责状态、attempt、重试、停止、结果校验、卡片组装、SSE snapshot 和本地持久化；前端只消费后端 snapshot，不解析 agent 自然语言或 raw RPC events。
 
@@ -12,20 +12,23 @@
 
 ## 计划依据
 
-- 规范文档：`docs/superpowers/specs/spec-pi-task-console.md`
+- 规范文档：`docs/superpowers/specs/spec-pi-task-console-v1.md`
 - Pi 机制参考：`docs/superpowers/specs/references/pi-rpc-mechanisms.md`
-- Workflow 参考：`docs/superpowers/specs/references/police-command-workflow.json`
-- UI 参考：`docs/superpowers/specs/references/task-console-ui-reference.md`
+- Workflow 参考：`docs/superpowers/specs/references/steps.json`
+- UI 参考：`docs/superpowers/specs/references/pi-task-console-ui-design-v1.md`
 - 当前代码：`packages/pi-task-console/src/* / public/* / config`
 - 当前测试：`packages/pi-task-console/test/pi-task-console.test.ts`
 
-本计划只覆盖第一版 POC。第二版主 agent 入口、用户自然语言路由、上下文交接、memory、workflow 匹配不在本轮实现。
+本计划主体只覆盖第一版 POC。第二版主 agent 入口、用户自然语言路由、上下文交接、memory、workflow 匹配不在本轮实现。
+
+Task 15 是 Gate 5 后追加的修正入口，用于记录 `steps` 工具契约后改为 `ToolRef[]` 后，后续 v2 开发前需要对第一版 runtime 底座补齐的兼容工作；它不改写 Task 1-14 的完成历史。
 
 ## 任务拆解矩阵
 
 | Spec 范围 | 基线状态 | 差距 | 计划任务 |
 |---|---|---|---|
 | Workflow 输入契约 | 有 `PlanStep`、`PlanTask`、`RuntimeStep`、`RuntimeTask`，但仍使用 `mcp` 和 demo fixture | 缺 `tools`、`retry`、`integer`；未验证公安 workflow 参考结构 | Task 1 |
+| Workflow tools 结构化修正 | v1 已完成实现按 tool name string allowlist 处理 | 当前 `steps.json` / `steps-schema.md` 已改为 `ToolRef[]`，后续实现需要补转换、校验和测试 | Task 15 |
 | 运行态数据 | 有 `TaskStore`、snapshot、logs、receipts、cards | 缺 attempts、conversationMessages；终态 guard 不完整 | Task 2 |
 | 任务结果和卡片契约 | task complete 后可创建 card | 仍使用 `card_data`；没有 `{ content, data? }` 校验；没有 task conversation message | Task 2、Task 4 |
 | Runtime 配置和持久化 | 有 `.env`、LLM config、MCP config | 缺 `runtime.config.json`、输出目录、child session 开关、本地文件持久化 | Task 3 |
@@ -173,7 +176,7 @@ export interface TaskRetryPolicy {
 
 - [x] **Step 4: 增加公安 workflow 参考结构验证**
 
-`docs/superpowers/specs/references/police-command-workflow.json` 必须能通过 `validatePlanSteps()`，并可被克隆为 runtime steps。测试至少覆盖以下 step id：
+`docs/superpowers/specs/references/steps.json` 必须能通过 `validatePlanSteps()`，并可被克隆为 runtime steps。测试至少覆盖以下 step id：
 
 - `step_incident_facts`
 - `step_basic_assessment`
@@ -798,8 +801,8 @@ npx tsx ../../node_modules/vitest/dist/cli.js --run test/pi-task-console.test.ts
 - 必须使用 `directTools` 把允许暴露的 remote MCP tools 注册为一等 Pi tools。
 - 默认单一 `mcp` proxy 工具必须禁用。
 - task `tools` allowlist 不得允许万能 `mcp` proxy。
-- 当前 POC 可以暂用无前缀 tool name 以兼容现有公安 workflow。
-- 长期 tool identity 必须保留 MCP server name/id 前缀方案，建议格式为 `$mcp_server_name:tool_name`；后续 task `tools` 字段应按该格式设计。
+- 当前已完成 POC 仍按 tool name string 作为 Pi 工具 allowlist。
+- 当前 `steps.json` / `steps-schema.md` 已升级为 `ToolRef[]`；结构化来源约束和 `tool_name` 提取逻辑由 Task 15 修正。
 
 - [x] **Step 4: 保留多层 allowlist**
 
@@ -839,8 +842,8 @@ npx tsx ../../node_modules/vitest/dist/cli.js --run test/pi-task-console.test.ts
 - adapter/package 层拒绝未允许工具或未发现工具。
 - metadata cache prewarm 成功路径。
 - metadata cache prewarm 失败导致 server 启动失败。
-- 当前 POC 裸 tool name 兼容公安 workflow。
-- 长期 `$mcp_server_name:tool_name` tool identity 策略有配置或校验占位，不被当前 POC 实现反向阻断。
+- 当前已完成 POC 的 tool name string allowlist 行为保持可回归。
+- `ToolRef[]` 兼容、`tool_name` 提取和 `server_url` + `toolset` + `tool_name` 来源约束由 Task 15 覆盖。
 
 - [x] **Step 8: 运行验证**
 
@@ -1416,3 +1419,75 @@ npm run check
 - 没有新增 changelog。
 - 没有提交 `.env`、密钥或运行输出目录。
 - ledger 已记录最终验证命令、真实 MCP/模型输出结果、浏览器人工验收结果、风险和未决问题。
+
+---
+
+## Task 15: 对齐更新后的 steps ToolRef 工具契约
+
+**目标：** 这是 Gate 5 之后追加的修正任务。`docs/superpowers/specs/references/steps.json` 和 `steps-schema.md` 已将 task `tools` 从 string array 改为 `ToolRef[]`，后续实现需要在不改写前面 v1 完成历史的前提下补齐输入契约、运行态转换和测试。
+
+**文件：**
+
+- 修改：`packages/pi-task-console/src/types.ts`
+- 修改：`packages/pi-task-console/src/tasks.ts`
+- 修改：`packages/pi-task-console/src/plan-validation.ts`
+- 修改：`packages/pi-task-console/src/task-dispatcher.ts`
+- 修改：`packages/pi-task-console/test/pi-task-console.test.ts`
+- 复核：`docs/superpowers/specs/references/steps.json`
+- 复核：`docs/superpowers/specs/references/steps-schema.md`
+- 状态记录：`docs/superpowers/ledgers/ledger-pi-task-console.md`
+
+- [ ] **Step 1: 更新输入和运行态类型**
+
+要求：
+
+- `PlanTask.tools` 使用 `readonly ToolRef[]`，不再使用 `readonly string[]`。
+- `ToolRef` 必须包含 `server_url`、`toolset`、`tool_name`、`tool_title`、`tool_description`。
+- `RuntimeTask` 可以保留完整 `ToolRef[]`，并提供派生的 Pi tool allowlist；不得丢失来源字段。
+- 已有 `skills`、`retry`、`card_type`、`data_structure`、`demoOutcome` 语义保持不变。
+
+- [ ] **Step 2: 更新 workflow 校验**
+
+要求：
+
+- `validatePlanSteps()` 接受 `ToolRef[]`。
+- `tools` 为空数组时合法。
+- `tools` 为字符串数组时必须拒绝，并返回明确校验错误。
+- 每个 `ToolRef` 缺任一必填字段时必须拒绝。
+- `tool_name` 是传给 Pi CLI / AgentSession allowlist 的稳定匹配键。
+- `server_url` + `toolset` + `tool_name` 作为来源约束和冲突检测基础。
+
+- [ ] **Step 3: 更新 dispatcher 工具 allowlist 转换**
+
+要求：
+
+- 创建 child Pi RPC process 时，从 `ToolRef[]` 提取 `tool_name` 传给 Pi 工具 allowlist。
+- Adapter/package 层仍必须保留第二道限制，避免 proxy fallback 或额外 direct tools 绕过 task allowlist。
+- 如果同一 task 内出现相同 `tool_name` 但 `server_url` 或 `toolset` 不同，必须拒绝或记录阻塞，不得静默降级。
+- 不允许重新暴露默认万能 `mcp` proxy。
+
+- [ ] **Step 4: 更新公安 workflow 参考结构测试**
+
+测试至少覆盖：
+
+- 当前 `docs/superpowers/specs/references/steps.json` 可通过输入校验并被 runtime 克隆。
+- 非空 `tools` 全部为 `ToolRef` 对象。
+- 字符串数组 `tools` 被拒绝。
+- 缺少 `server_url`、`toolset`、`tool_name`、`tool_title` 或 `tool_description` 的工具对象被拒绝。
+- dispatcher 从 `ToolRef[]` 提取 `tool_name` 后，已有 tool allowlist 行为仍生效。
+- `tools: []` 的 task 仍正常运行。
+
+- [ ] **Step 5: 运行验证**
+
+运行：
+
+```bash
+cd packages/coding-agent
+npx tsx ../../node_modules/vitest/dist/cli.js --run test/pi-task-console.test.ts
+```
+
+代码修改完成后：
+
+```bash
+npm run check
+```
