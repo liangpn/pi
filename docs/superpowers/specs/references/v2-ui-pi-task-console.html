@@ -1,0 +1,1608 @@
+<!doctype html>
+<html lang="zh-CN"><head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>警情处置控制台</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        --bg: oklch(15% 0.022 200);
+        --bg-deep: oklch(11% 0.022 200);
+        --surface: oklch(19% 0.022 198);
+        --surface-2: oklch(23% 0.024 198);
+        --surface-3: oklch(28% 0.026 196);
+        --ink: oklch(96% 0.012 178);
+        --text: oklch(86% 0.018 178);
+        --muted: oklch(64% 0.022 184);
+        --faint: oklch(46% 0.022 184);
+        --line: oklch(30% 0.024 194);
+        --line-2: oklch(40% 0.030 192);
+        --grid: oklch(34% 0.022 200);
+        --green: oklch(76% 0.14 168);
+        --green-soft: color-mix(in oklch, var(--green) 18%, transparent);
+        --green-glow: color-mix(in oklch, var(--green) 32%, transparent);
+        --amber: oklch(78% 0.13 78);
+        --amber-soft: color-mix(in oklch, var(--amber) 20%, transparent);
+        --red: oklch(70% 0.16 28);
+        --red-soft: color-mix(in oklch, var(--red) 20%, transparent);
+        --blue: oklch(74% 0.11 222);
+        --blue-soft: color-mix(in oklch, var(--blue) 16%, transparent);
+        --shadow: 0 22px 70px rgba(0, 0, 0, 0.48);
+        --dock-shadow: 0 28px 90px rgba(0, 0, 0, 0.55), inset 0 1px 0 rgba(255, 255, 255, 0.08);
+        --rail: 56px;
+        --top: 58px;
+        --side-width: clamp(392px, 27vw, 500px);
+        --cards-bottom-safe: 156px;
+        --radius-xs: 6px;
+        --radius-sm: 9px;
+        --radius-md: 12px;
+        --radius-lg: 16px;
+        --sans: "PingFang SC", "Microsoft YaHei", "Noto Sans SC", system-ui, sans-serif;
+        --mono: "SFMono-Regular", "Cascadia Mono", ui-monospace, monospace;
+        --display: "Inter", "Söhne", -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+      }
+
+      * { box-sizing: border-box; }
+      html, body { height: 100%; }
+      body {
+        margin: 0;
+        overflow: hidden;
+        background:
+          radial-gradient(circle at 14% -10%, color-mix(in oklch, var(--green) 10%, transparent), transparent 36%),
+          radial-gradient(circle at 88% 4%, color-mix(in oklch, var(--blue) 10%, transparent), transparent 30%),
+          var(--bg);
+        color: var(--text);
+        font-family: var(--sans);
+      }
+      button, textarea { font: inherit; }
+      button { cursor: pointer; }
+      button:focus-visible, textarea:focus-visible, [tabindex]:focus-visible {
+        outline: 2px solid var(--green);
+        outline-offset: 2px;
+      }
+
+      .app {
+        position: relative;
+        display: grid;
+        grid-template-columns: var(--rail) minmax(0, 1fr);
+        grid-template-rows: var(--top) minmax(0, 1fr);
+        height: 100vh;
+        overflow: hidden;
+        background:
+          linear-gradient(180deg, rgba(255, 255, 255, 0.04), transparent 220px),
+          linear-gradient(rgba(127, 230, 188, 0.022) 1px, transparent 1px),
+          linear-gradient(90deg, rgba(127, 230, 188, 0.022) 1px, transparent 1px),
+          var(--bg);
+        background-size: auto, 100% 32px, 32px 100%, auto;
+      }
+
+      .left-rail {
+        grid-row: 1 / 3;
+        grid-column: 1;
+        display: grid;
+        grid-template-rows: 56px minmax(0, 1fr) auto;
+        align-items: start;
+        border-right: 1px solid color-mix(in oklch, var(--line) 88%, black);
+        background: color-mix(in oklch, var(--bg) 84%, black);
+        z-index: 12;
+        box-shadow: inset -1px 0 0 color-mix(in oklch, var(--green) 8%, transparent);
+      }
+
+      .rail-mark {
+        display: grid;
+        place-items: center;
+        height: 56px;
+        border-bottom: 1px solid var(--line);
+        position: relative;
+      }
+
+      .seal {
+        display: grid;
+        place-items: center;
+        width: 36px;
+        height: 36px;
+        border: 1px solid color-mix(in oklch, var(--green) 48%, var(--line));
+        border-radius: 10px;
+        color: var(--ink);
+        background:
+          linear-gradient(135deg, color-mix(in oklch, var(--green) 22%, transparent), transparent 58%),
+          var(--surface-2);
+        font-size: 14px;
+        font-weight: 900;
+        letter-spacing: 0.04em;
+        box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08), 0 0 0 4px color-mix(in oklch, var(--green) 6%, transparent);
+        position: relative;
+      }
+      .seal::before {
+        content: "";
+        position: absolute;
+        inset: 4px;
+        border: 1px dashed color-mix(in oklch, var(--green) 30%, transparent);
+        border-radius: 6px;
+      }
+
+      .rail-group { display: grid; gap: 8px; padding: 12px 8px; }
+      .rail-group.bottom { align-self: end; padding-bottom: 14px; }
+
+      .rail-btn, .icon-btn, .mini-btn, .fab {
+        display: inline-grid;
+        place-items: center;
+        border: 1px solid color-mix(in oklch, var(--line) 78%, black);
+        color: var(--muted);
+        background: color-mix(in oklch, var(--surface) 82%, black);
+      }
+
+      .rail-btn {
+        position: relative;
+        width: 38px;
+        height: 38px;
+        border-radius: 12px;
+        transition: 150ms ease;
+      }
+
+      .rail-btn svg, .icon-btn svg, .mini-btn svg, .fab svg {
+        width: 17px;
+        height: 17px;
+        stroke: currentColor;
+        stroke-width: 1.7;
+        fill: none;
+        stroke-linecap: round;
+        stroke-linejoin: round;
+      }
+
+      .rail-btn.active {
+        color: var(--ink);
+        border-color: color-mix(in oklch, var(--green) 52%, var(--line));
+        background: linear-gradient(180deg, color-mix(in oklch, var(--green) 18%, var(--surface)), color-mix(in oklch, var(--green) 8%, var(--surface)));
+        box-shadow: inset 0 1px 0 rgba(255,255,255,0.08), 0 0 0 4px color-mix(in oklch, var(--green) 8%, transparent);
+      }
+      .rail-btn.active::before {
+        content: "";
+        position: absolute;
+        left: -8px;
+        top: 9px;
+        bottom: 9px;
+        width: 3px;
+        border-radius: 999px;
+        background: var(--green);
+        box-shadow: 0 0 8px var(--green-glow);
+      }
+      .rail-btn .badge {
+        position: absolute;
+        top: 4px;
+        right: 4px;
+        min-width: 14px;
+        height: 14px;
+        border-radius: 999px;
+        padding: 0 3px;
+        background: var(--red);
+        color: white;
+        font-size: 9px;
+        font-weight: 800;
+        line-height: 14px;
+        text-align: center;
+        box-shadow: 0 0 0 2px color-mix(in oklch, var(--bg) 80%, black);
+      }
+      .rail-btn.recording {
+        color: var(--red);
+        border-color: rgba(220, 111, 99, 0.75);
+        background: var(--red-soft);
+      }
+      .rail-btn.recording::after, .voice-dot.recording::after {
+        content: "";
+        position: absolute;
+        inset: -5px;
+        border: 1px solid rgba(220, 111, 99, 0.45);
+        border-radius: inherit;
+        animation: breath 1100ms ease-out infinite;
+      }
+
+      .topbar {
+        grid-column: 2;
+        grid-row: 1;
+        display: grid;
+        grid-template-columns: 230px minmax(0, 1fr) auto;
+        align-items: center;
+        gap: 16px;
+        min-width: 0;
+        padding: 0 20px;
+        border-bottom: 1px solid color-mix(in oklch, var(--line) 84%, black);
+        background: color-mix(in oklch, var(--bg) 88%, black);
+        backdrop-filter: blur(18px);
+        position: relative;
+      }
+      .topbar::after {
+        content: "";
+        position: absolute;
+        left: 0;
+        right: 0;
+        bottom: -1px;
+        height: 1px;
+        background: linear-gradient(90deg, transparent, var(--green-glow), transparent);
+        opacity: 0.6;
+      }
+
+      .brand { display: flex; align-items: center; gap: 12px; min-width: 0; }
+      .brand h1 {
+        margin: 0;
+        color: var(--ink);
+        font-size: 14px;
+        line-height: 1.2;
+        letter-spacing: 0.01em;
+        font-weight: 800;
+      }
+      .brand .sub {
+        display: block;
+        margin-top: 2px;
+        color: var(--faint);
+        font-family: var(--mono);
+        font-size: 10px;
+        letter-spacing: 0.1em;
+        text-transform: uppercase;
+      }
+      .brand-divider { width: 1px; height: 28px; background: var(--line); }
+
+      .incident {
+        display: grid;
+        grid-template-columns: auto minmax(0, 1fr) auto;
+        gap: 12px;
+        align-items: center;
+        min-width: 0;
+        padding: 0 14px;
+        border-left: 1px solid var(--line);
+        border-right: 1px solid var(--line);
+        height: 38px;
+      }
+      .incident-tag {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        height: 22px;
+        padding: 0 8px;
+        border: 1px solid color-mix(in oklch, var(--amber) 50%, var(--line));
+        border-radius: 4px;
+        background: var(--amber-soft);
+        color: var(--amber);
+        font-family: var(--mono);
+        font-size: 10px;
+        font-weight: 800;
+        letter-spacing: 0.08em;
+        white-space: nowrap;
+      }
+      .incident-tag::before {
+        content: "";
+        width: 5px;
+        height: 5px;
+        border-radius: 50%;
+        background: var(--amber);
+        box-shadow: 0 0 6px var(--amber);
+        animation: pulse 1.6s ease-in-out infinite;
+      }
+      .incident strong {
+        overflow: hidden;
+        color: var(--ink);
+        font-size: 14px;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        font-weight: 700;
+      }
+      .incident .meta {
+        display: flex;
+        gap: 8px;
+        color: var(--faint);
+        font-family: var(--mono);
+        font-size: 11px;
+        white-space: nowrap;
+      }
+      .incident .meta b { color: var(--text); font-weight: 800; }
+
+      .actions { display: flex; gap: 8px; align-items: center; }
+      .pill {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        height: 32px;
+        padding: 0 12px;
+        border: 1px solid color-mix(in oklch, var(--line) 78%, black);
+        border-radius: 8px;
+        background: color-mix(in oklch, var(--surface) 82%, black);
+        color: var(--text);
+        font-size: 12px;
+        font-weight: 600;
+        white-space: nowrap;
+      }
+      .pill .label {
+        color: var(--faint);
+        font-family: var(--mono);
+        font-size: 10px;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+      }
+      .pulse {
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        background: var(--amber);
+        box-shadow: 0 0 0 4px var(--amber-soft);
+      }
+      .icon-btn { width: 32px; height: 32px; border-radius: 9px; transition: 150ms ease; }
+      .icon-btn:hover, .mini-btn:hover, .rail-btn:hover, .fab:hover {
+        border-color: color-mix(in oklch, var(--green) 44%, var(--line));
+        color: var(--ink);
+        background: color-mix(in oklch, var(--green) 10%, var(--surface));
+      }
+
+      .workspace {
+        grid-column: 2;
+        grid-row: 2;
+        position: relative;
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) var(--side-width);
+        min-width: 0;
+        min-height: 0;
+        overflow: hidden;
+        transition: grid-template-columns 220ms ease;
+      }
+      .workspace.side-left { grid-template-columns: var(--side-width) minmax(0, 1fr); }
+      .workspace.side-left .cards { order: 2; }
+      .workspace.side-left .side {
+        order: 1;
+        border-right: 1px solid var(--line);
+        border-left: 0;
+      }
+      .workspace.side-collapsed { grid-template-columns: minmax(0, 1fr) 0; }
+      .workspace.side-left.side-collapsed { grid-template-columns: 0 minmax(0, 1fr); }
+
+      .cards {
+        position: relative;
+        min-width: 0;
+        min-height: 0;
+        overflow: auto;
+        padding: 16px 18px var(--cards-bottom-safe);
+        scroll-padding-bottom: var(--cards-bottom-safe);
+        scrollbar-width: none;
+      }
+      .cards::-webkit-scrollbar { display: none; }
+
+      .cards-head {
+        display: flex;
+        justify-content: space-between;
+        gap: 16px;
+        align-items: end;
+        margin-bottom: 14px;
+        min-height: 44px;
+      }
+      .cards-head h2 {
+        margin: 0 0 4px;
+        color: var(--ink);
+        font-size: 19px;
+        letter-spacing: 0.005em;
+        font-weight: 800;
+        display: flex;
+        align-items: center;
+        gap: 10px;
+      }
+      .cards-head h2::before {
+        content: "";
+        display: inline-block;
+        width: 4px;
+        height: 16px;
+        border-radius: 2px;
+        background: linear-gradient(180deg, var(--green), color-mix(in oklch, var(--green) 30%, transparent));
+        box-shadow: 0 0 8px var(--green-glow);
+      }
+      .cards-head p {
+        margin: 0;
+        color: var(--muted);
+        font-size: 12px;
+        text-wrap: pretty;
+      }
+
+      .cards-tools { display: grid; grid-template-columns: repeat(2, auto); gap: 6px; }
+      .tiny-chip {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        min-height: 30px;
+        border: 1px solid color-mix(in oklch, var(--line) 84%, black);
+        border-radius: 8px;
+        padding: 0 10px 0 8px;
+        background: color-mix(in oklch, var(--surface) 76%, black);
+        color: var(--muted);
+        font-size: 11px;
+        font-weight: 600;
+        white-space: nowrap;
+      }
+      .tiny-chip .ico {
+        display: grid;
+        place-items: center;
+        width: 16px;
+        height: 16px;
+        border-radius: 4px;
+        background: var(--surface-2);
+        color: var(--muted);
+      }
+      .tiny-chip .ico svg { width: 10px; height: 10px; stroke: currentColor; stroke-width: 2; fill: none; }
+      .tiny-chip strong {
+        color: var(--ink);
+        font-family: var(--mono);
+        font-size: 14px;
+        font-weight: 800;
+        font-variant-numeric: tabular-nums;
+      }
+      .tiny-chip .suffix { color: var(--faint); font-size: 10px; margin-left: -4px; }
+      .tiny-chip.warn { border-color: color-mix(in oklch, var(--amber) 32%, var(--line)); }
+      .tiny-chip.warn strong { color: var(--amber); }
+      .tiny-chip.warn .ico { background: var(--amber-soft); color: var(--amber); }
+      .tiny-chip.bad { border-color: color-mix(in oklch, var(--red) 36%, var(--line)); }
+      .tiny-chip.bad strong { color: var(--red); }
+      .tiny-chip.bad .ico { background: var(--red-soft); color: var(--red); }
+      .tiny-chip.ok { border-color: color-mix(in oklch, var(--green) 32%, var(--line)); }
+      .tiny-chip.ok strong { color: var(--green); }
+      .tiny-chip.ok .ico { background: var(--green-soft); color: var(--green); }
+      .app:not(.accepted) .cards-tools { display: none; }
+
+      .card-grid {
+        display: none;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        grid-auto-rows: 200px;
+        gap: 12px;
+        align-content: start;
+        padding-bottom: 8px;
+      }
+      .workspace.side-collapsed .card-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+      .card-grid.has-maximized {
+        position: absolute;
+        inset: 16px 18px var(--cards-bottom-safe);
+        grid-template-columns: minmax(0, 1fr);
+        grid-template-rows: minmax(0, 1fr);
+        grid-auto-rows: minmax(0, 1fr);
+        min-height: 0;
+        padding-bottom: 0;
+      }
+      .accepted .empty-canvas { display: none; }
+      .accepted .card-grid { display: grid; }
+
+      .business-card[data-card="location"],
+      .business-card[data-card="plan"],
+      .business-card[data-card="camera"],
+      .business-card[data-card="profile"],
+      .business-card[data-card="resource"] {
+        grid-column: span 1;
+        grid-row: span 1;
+      }
+
+      .business-card {
+        position: relative;
+        display: grid;
+        grid-template-rows: 40px minmax(0, 1fr);
+        height: 200px;
+        min-height: 200px;
+        overflow: hidden;
+        border: 1px solid color-mix(in oklch, var(--line) 88%, black);
+        border-radius: var(--radius-md);
+        background:
+          linear-gradient(180deg, rgba(255, 255, 255, 0.045), transparent 36%),
+          color-mix(in oklch, var(--surface) 92%, black);
+        box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+        transition: border-color 160ms ease, transform 160ms ease, box-shadow 160ms ease;
+      }
+      .business-card:hover { border-color: color-mix(in oklch, var(--line-2) 80%, var(--green)); }
+      .business-card.selected {
+        border-color: var(--green);
+        box-shadow: 0 0 0 1px var(--green-glow), var(--shadow);
+      }
+      .business-card.selected::before {
+        content: "";
+        position: absolute;
+        inset: 0 auto 0 0;
+        width: 2px;
+        background: linear-gradient(180deg, var(--green), color-mix(in oklch, var(--green) 30%, transparent));
+        box-shadow: 0 0 12px var(--green-glow);
+      }
+      .card-grid.has-maximized .business-card.maximized {
+        grid-column: 1 / -1;
+        grid-row: 1;
+        min-height: 0;
+        height: 100%;
+        box-shadow: 0 0 0 1px var(--green-glow), var(--shadow);
+      }
+      .card-corner {
+        position: absolute;
+        top: 0;
+        right: 0;
+        width: 12px;
+        height: 12px;
+        border-top: 1px solid var(--line-2);
+        border-right: 1px solid var(--line-2);
+        opacity: 0.6;
+        pointer-events: none;
+      }
+      .business-card[data-card="location"] .card-corner {
+        border-color: color-mix(in oklch, var(--green) 30%, var(--line-2));
+      }
+
+      .card-top {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto;
+        gap: 10px;
+        align-items: center;
+        padding: 0 14px;
+        border-bottom: 1px solid color-mix(in oklch, var(--line) 76%, black);
+        background: linear-gradient(180deg, rgba(255,255,255,0.025), transparent);
+      }
+      .card-top h3 {
+        margin: 0;
+        color: var(--ink);
+        font-size: 13px;
+        font-weight: 800;
+        letter-spacing: 0.01em;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+      .card-top .ic {
+        display: grid;
+        place-items: center;
+        width: 18px;
+        height: 18px;
+        border-radius: 5px;
+        background: var(--surface-2);
+        color: var(--muted);
+        flex-shrink: 0;
+      }
+      .card-top .ic svg { width: 11px; height: 11px; stroke: currentColor; stroke-width: 2; fill: none; stroke-linecap: round; stroke-linejoin: round; }
+      .card-top .sub {
+        color: var(--faint);
+        font-family: var(--mono);
+        font-size: 10px;
+        letter-spacing: 0.05em;
+        margin-left: 4px;
+      }
+      .card-actions { display: flex; gap: 4px; }
+      .mini-btn { width: 24px; height: 24px; border-radius: 6px; }
+      .mini-btn svg { width: 12px; height: 12px; }
+      .card-body { min-height: 0; padding: 0; position: relative; overflow: hidden; }
+
+      /* MAP */
+      .map-wrap {
+        position: relative;
+        width: 100%;
+        height: 100%;
+        min-height: 280px;
+        overflow: hidden;
+        background:
+          radial-gradient(ellipse at 50% 60%, color-mix(in oklch, var(--green) 12%, transparent), transparent 40%),
+          linear-gradient(180deg, color-mix(in oklch, var(--bg-deep) 92%, var(--surface-2)) 0%, color-mix(in oklch, var(--bg) 90%, black) 100%);
+      }
+      .map-svg { position: absolute; inset: 0; width: 100%; height: 100%; }
+      .map-svg .grid-line { stroke: var(--grid); stroke-width: 0.5; opacity: 0.5; }
+      .map-svg .block { fill: color-mix(in oklch, var(--surface) 30%, transparent); stroke: color-mix(in oklch, var(--line) 50%, transparent); stroke-width: 0.5; }
+      .map-svg .block-name { fill: var(--faint); font-family: var(--mono); font-size: 8px; letter-spacing: 0.1em; }
+      .map-svg .water { fill: color-mix(in oklch, var(--blue) 18%, transparent); }
+      .map-svg .water-name { fill: color-mix(in oklch, var(--blue) 65%, var(--ink)); font-family: var(--mono); font-size: 9px; letter-spacing: 0.18em; }
+      .map-svg .road { stroke: color-mix(in oklch, var(--ink) 24%, transparent); fill: none; stroke-linecap: round; }
+      .map-svg .road.major { stroke: color-mix(in oklch, var(--ink) 36%, transparent); }
+      .map-svg .road.minor { stroke: color-mix(in oklch, var(--ink) 16%, transparent); }
+      .map-svg .road-dash { stroke: color-mix(in oklch, var(--ink) 36%, transparent); stroke-width: 1.2; stroke-dasharray: 4 4; fill: none; }
+      .map-svg .pin-dot { fill: var(--green); }
+      .map-svg .pin-incident { fill: var(--red); }
+      .map-svg .pin-amber { fill: var(--amber); }
+      .map-svg .pin-blue { fill: var(--blue); }
+      .map-svg .pin-text { fill: var(--bg); font-family: var(--mono); font-size: 8px; font-weight: 800; text-anchor: middle; }
+      .map-svg .ring { fill: none; stroke: var(--green); stroke-dasharray: 3 3; }
+      .map-svg .label { fill: var(--ink); font-family: var(--mono); font-size: 9px; font-weight: 700; }
+      .map-svg .label-bg { fill: color-mix(in oklch, var(--bg) 80%, transparent); }
+      .map-svg .pin-pulse { fill: none; stroke: var(--red); stroke-width: 1.5; transform-origin: center; animation: map-pulse 2s ease-out infinite; }
+      .map-svg .pin-pulse.delay-1 { animation-delay: 0.6s; }
+      .map-svg .pin-pulse.delay-2 { animation-delay: 1.2s; }
+      .map-overlay { position: absolute; pointer-events: none; font-family: var(--mono); color: var(--text); }
+      .map-corner-tr { top: 10px; right: 12px; display: flex; flex-direction: column; gap: 4px; align-items: flex-end; font-size: 9px; letter-spacing: 0.08em; color: var(--muted); text-transform: uppercase; }
+      .map-corner-tr .coords { color: var(--ink); font-size: 11px; font-weight: 700; letter-spacing: 0.05em; }
+      .map-corner-bl { bottom: 10px; left: 12px; display: flex; align-items: center; gap: 10px; font-size: 9px; color: var(--muted); }
+      .compass { position: relative; width: 28px; height: 28px; border: 1px solid var(--line-2); border-radius: 50%; background: color-mix(in oklch, var(--bg) 70%, transparent); }
+      .compass::before { content: "N"; position: absolute; top: 1px; left: 50%; transform: translateX(-50%); color: var(--green); font-size: 8px; font-weight: 800; }
+      .compass::after { content: ""; position: absolute; top: 4px; left: 50%; transform: translateX(-50%); width: 1px; height: 6px; background: var(--green); }
+      .compass .needle { position: absolute; top: 50%; left: 50%; width: 1px; height: 18px; background: linear-gradient(180deg, var(--red) 0%, var(--red) 50%, var(--ink) 50%, var(--ink) 100%); transform: translate(-50%, -50%); }
+      .scale-bar { display: flex; flex-direction: column; gap: 2px; }
+      .scale-bar .bar { width: 60px; height: 4px; background: repeating-linear-gradient(90deg, var(--ink) 0, var(--ink) 12px, transparent 12px, transparent 24px); }
+      .scale-bar span { letter-spacing: 0.1em; }
+      .map-legend { position: absolute; top: 10px; left: 12px; display: grid; gap: 4px; font-size: 10px; font-family: var(--mono); color: var(--muted); pointer-events: none; }
+      .map-legend .row { display: flex; align-items: center; gap: 6px; }
+      .map-legend .dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+      .map-stats { position: absolute; bottom: 10px; right: 12px; display: flex; gap: 12px; font-size: 10px; font-family: var(--mono); color: var(--muted); pointer-events: none; }
+      .map-stats .item { display: flex; align-items: center; gap: 5px; }
+      .map-stats .num { color: var(--ink); font-weight: 800; font-size: 11px; }
+
+      /* PLAN */
+      .plan-body { display: grid; grid-template-columns: 200px minmax(0, 1fr); gap: 0; height: 100%; min-height: 180px; }
+      .plan-banner { position: relative; padding: 12px 14px; border-right: 1px solid var(--line); background: linear-gradient(180deg, color-mix(in oklch, var(--green) 8%, transparent), transparent 60%); display: flex; flex-direction: column; gap: 10px; }
+      .plan-banner .label { color: var(--faint); font-family: var(--mono); font-size: 10px; letter-spacing: 0.1em; text-transform: uppercase; }
+      .plan-banner .name { color: var(--ink); font-size: 16px; font-weight: 800; line-height: 1.25; }
+      .plan-banner .confidence { display: flex; align-items: baseline; gap: 4px; margin-top: 2px; }
+      .plan-banner .confidence .v { color: var(--green); font-family: var(--display); font-size: 26px; font-weight: 800; line-height: 1; font-variant-numeric: tabular-nums; letter-spacing: -0.02em; }
+      .plan-banner .confidence .u { color: var(--muted); font-family: var(--mono); font-size: 10px; }
+      .plan-banner .conf-bar { height: 4px; border-radius: 999px; background: var(--line); overflow: hidden; }
+      .plan-banner .conf-bar i { display: block; height: 100%; background: linear-gradient(90deg, color-mix(in oklch, var(--green) 60%, transparent), var(--green)); }
+      .plan-banner .id { margin-top: auto; padding-top: 8px; border-top: 1px dashed var(--line); color: var(--faint); font-family: var(--mono); font-size: 10px; letter-spacing: 0.06em; display: flex; justify-content: space-between; }
+      .plan-banner .id b { color: var(--text); font-weight: 800; }
+      .plan-actions { padding: 12px 14px; display: grid; align-content: start; gap: 7px; overflow: auto; }
+      .plan-row { display: grid; grid-template-columns: 14px 1fr auto; gap: 10px; align-items: start; padding: 6px 8px; border-radius: 7px; background: color-mix(in oklch, var(--surface) 50%, transparent); border: 1px solid transparent; font-size: 12px; line-height: 1.45; color: var(--text); transition: 150ms ease; }
+      .plan-row:hover { border-color: var(--line); background: color-mix(in oklch, var(--surface-2) 70%, transparent); }
+      .plan-row .pdot { width: 8px; height: 8px; border-radius: 2px; margin-top: 5px; flex-shrink: 0; }
+      .plan-row.p1 .pdot { background: var(--red); box-shadow: 0 0 0 3px var(--red-soft); }
+      .plan-row.p2 .pdot { background: var(--amber); box-shadow: 0 0 0 3px var(--amber-soft); }
+      .plan-row.p3 .pdot { background: var(--blue); box-shadow: 0 0 0 3px var(--blue-soft); }
+      .plan-row .step-no { color: var(--faint); font-family: var(--mono); font-size: 10px; font-weight: 800; letter-spacing: 0.05em; flex-shrink: 0; }
+      .plan-row .txt { color: var(--ink); font-size: 12px; font-weight: 600; line-height: 1.4; }
+      .plan-row .sub { color: var(--muted); font-size: 10px; margin-top: 2px; font-family: var(--mono); letter-spacing: 0.04em; }
+
+      /* CAMERA */
+      .cam-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0; height: 100%; min-height: 180px; }
+      .cam { position: relative; overflow: hidden; background: var(--bg-deep); border-right: 1px solid var(--line); border-bottom: 1px solid var(--line); }
+      .cam:nth-child(2n) { border-right: 0; }
+      .cam:nth-last-child(-n+2) { border-bottom: 0; }
+      .cam-scene { position: absolute; inset: 0; background: radial-gradient(circle at 30% 40%, color-mix(in oklch, var(--blue) 18%, transparent), transparent 50%), radial-gradient(circle at 75% 65%, color-mix(in oklch, var(--green) 12%, transparent), transparent 45%), linear-gradient(135deg, color-mix(in oklch, var(--surface-2) 80%, black), color-mix(in oklch, var(--bg) 90%, black)); }
+      .cam-glow { position: absolute; border-radius: 50%; background: radial-gradient(circle, rgba(255, 255, 255, 0.08), transparent 60%); filter: blur(2px); }
+      .cam-scan { position: absolute; left: 0; right: 0; top: 0; height: 30%; background: linear-gradient(180deg, transparent, color-mix(in oklch, var(--green) 28%, transparent), transparent); animation: scan 4s linear infinite; pointer-events: none; }
+      .cam-scan::after { content: ""; position: absolute; left: 0; right: 0; bottom: 0; height: 1px; background: var(--green); box-shadow: 0 0 8px var(--green); }
+      .cam-grain { position: absolute; inset: 0; background: repeating-linear-gradient(0deg, rgba(255,255,255,0.018) 0px, rgba(255,255,255,0.018) 1px, transparent 1px, transparent 3px); pointer-events: none; }
+      .cam-corner { position: absolute; width: 10px; height: 10px; border: 1px solid color-mix(in oklch, var(--green) 60%, transparent); pointer-events: none; }
+      .cam-corner.tl { top: 8px; left: 8px; border-right: 0; border-bottom: 0; }
+      .cam-corner.tr { top: 8px; right: 8px; border-left: 0; border-bottom: 0; }
+      .cam-corner.bl { bottom: 8px; left: 8px; border-right: 0; border-top: 0; }
+      .cam-corner.br { bottom: 8px; right: 8px; border-left: 0; border-top: 0; }
+      .cam-tag { position: absolute; top: 8px; left: 22px; display: flex; align-items: center; gap: 5px; font-family: var(--mono); font-size: 9px; color: var(--ink); font-weight: 800; letter-spacing: 0.08em; text-shadow: 0 1px 2px rgba(0,0,0,0.6); }
+      .cam-tag .live { width: 5px; height: 5px; border-radius: 50%; background: var(--red); box-shadow: 0 0 6px var(--red); animation: blink 1.4s ease-in-out infinite; }
+      .cam-time { position: absolute; top: 8px; right: 22px; font-family: var(--mono); font-size: 9px; color: var(--ink); font-weight: 700; letter-spacing: 0.05em; text-shadow: 0 1px 2px rgba(0,0,0,0.6); }
+      .cam-meta { position: absolute; bottom: 8px; left: 22px; right: 22px; display: flex; justify-content: space-between; font-family: var(--mono); font-size: 9px; color: var(--ink); text-shadow: 0 1px 2px rgba(0,0,0,0.6); letter-spacing: 0.04em; }
+      .cam-meta .pos { font-weight: 700; }
+      .cam-meta .v { color: color-mix(in oklch, var(--green) 80%, white); font-weight: 800; }
+      .cam-bbox { position: absolute; border: 1px solid var(--green); box-shadow: 0 0 0 1px color-mix(in oklch, var(--green) 30%, transparent); background: color-mix(in oklch, var(--green) 8%, transparent); pointer-events: none; }
+      .cam-bbox::before { content: attr(data-id); position: absolute; top: -14px; left: -1px; padding: 0 4px; background: var(--green); color: var(--bg); font-family: var(--mono); font-size: 8px; font-weight: 800; line-height: 12px; letter-spacing: 0.05em; }
+
+      /* PROFILE */
+      .profile-body { display: grid; grid-template-columns: 168px minmax(0, 1fr); gap: 0; height: 100%; min-height: 180px; }
+      .profile-id { padding: 12px 14px; border-right: 1px solid var(--line); background: linear-gradient(180deg, color-mix(in oklch, var(--amber) 6%, transparent), transparent 60%); display: flex; flex-direction: column; gap: 8px; }
+      .profile-avatar { width: 44px; height: 44px; border-radius: 12px; display: grid; place-items: center; background: linear-gradient(135deg, color-mix(in oklch, var(--amber) 30%, var(--surface-2)), var(--surface-2)); color: var(--ink); font-size: 16px; font-weight: 800; border: 1px solid color-mix(in oklch, var(--amber) 40%, transparent); position: relative; }
+      .profile-avatar::after { content: ""; position: absolute; right: -2px; bottom: -2px; width: 12px; height: 12px; border-radius: 50%; background: var(--green); border: 2px solid var(--bg); }
+      .profile-id .name { color: var(--ink); font-size: 15px; font-weight: 800; line-height: 1.2; }
+      .profile-id .phone { color: var(--muted); font-family: var(--mono); font-size: 11px; letter-spacing: 0.04em; }
+      .profile-stats { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-top: 2px; }
+      .profile-stat { padding: 5px 7px; border: 1px solid var(--line); border-radius: 6px; background: var(--surface); }
+      .profile-stat .v { color: var(--ink); font-family: var(--display); font-size: 14px; font-weight: 800; line-height: 1; font-variant-numeric: tabular-nums; }
+      .profile-stat .l { color: var(--faint); font-family: var(--mono); font-size: 9px; letter-spacing: 0.08em; margin-top: 3px; text-transform: uppercase; }
+      .profile-timeline { padding: 12px 14px; overflow: auto; }
+      .tl-label { color: var(--faint); font-family: var(--mono); font-size: 10px; letter-spacing: 0.1em; text-transform: uppercase; margin-bottom: 8px; display: flex; justify-content: space-between; }
+      .tl-label b { color: var(--text); font-weight: 800; }
+      .timeline { position: relative; display: grid; gap: 4px; }
+      .timeline::before { content: ""; position: absolute; left: 6px; top: 6px; bottom: 6px; width: 1px; background: linear-gradient(180deg, var(--line-2), var(--line), transparent); }
+      .tl-item { position: relative; display: grid; grid-template-columns: 22px 1fr; gap: 8px; align-items: start; padding: 4px 0; }
+      .tl-item .node { width: 9px; height: 9px; border-radius: 50%; margin-top: 5px; margin-left: 2px; background: var(--surface-2); border: 1px solid var(--line-2); z-index: 1; }
+      .tl-item.match .node { background: var(--green); border-color: var(--green); box-shadow: 0 0 0 3px var(--green-soft); }
+      .tl-item.warn .node { background: var(--amber); border-color: var(--amber); }
+      .tl-item .what { color: var(--text); font-size: 11px; line-height: 1.4; }
+      .tl-item .what b { color: var(--ink); font-weight: 700; }
+      .tl-item.match .what b { color: var(--green); }
+      .tl-item .when { color: var(--faint); font-family: var(--mono); font-size: 9px; letter-spacing: 0.05em; }
+
+      /* RESOURCE */
+      .resource-body { display: grid; grid-template-columns: repeat(3, 1fr); height: 100%; min-height: 160px; }
+      .res-col { position: relative; padding: 14px 16px 12px; border-right: 1px solid var(--line); display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+      .res-col:last-child { border-right: 0; }
+      .res-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+      .res-id { display: flex; align-items: center; gap: 8px; }
+      .res-glyph { width: 28px; height: 28px; border-radius: 8px; display: grid; place-items: center; background: var(--surface-2); color: var(--green); font-size: 10px; font-weight: 800; font-family: var(--mono); border: 1px solid var(--line-2); }
+      .res-glyph svg { width: 13px; height: 13px; stroke: currentColor; stroke-width: 1.8; fill: none; stroke-linecap: round; stroke-linejoin: round; }
+      .res-glyph.amber { color: var(--amber); border-color: color-mix(in oklch, var(--amber) 40%, var(--line-2)); }
+      .res-glyph.blue { color: var(--blue); border-color: color-mix(in oklch, var(--blue) 40%, var(--line-2)); }
+      .res-glyph.green { color: var(--green); border-color: color-mix(in oklch, var(--green) 40%, var(--line-2)); }
+      .res-name { color: var(--ink); font-size: 13px; font-weight: 800; line-height: 1.2; }
+      .res-sub { color: var(--faint); font-family: var(--mono); font-size: 10px; letter-spacing: 0.04em; margin-top: 1px; }
+      .res-status { display: inline-flex; align-items: center; gap: 5px; height: 20px; padding: 0 7px; border-radius: 5px; font-size: 10px; font-weight: 700; font-family: var(--mono); letter-spacing: 0.04em; }
+      .res-status.ok { background: var(--green-soft); color: var(--green); border: 1px solid color-mix(in oklch, var(--green) 30%, transparent); }
+      .res-status.amber { background: var(--amber-soft); color: var(--amber); border: 1px solid color-mix(in oklch, var(--amber) 30%, transparent); }
+      .res-status.blue { background: var(--blue-soft); color: var(--blue); border: 1px solid color-mix(in oklch, var(--blue) 30%, transparent); }
+      .res-status::before { content: ""; width: 5px; height: 5px; border-radius: 50%; background: currentColor; }
+      .res-body-row { display: flex; align-items: center; gap: 16px; margin-top: 2px; }
+      .res-ring { position: relative; width: 56px; height: 56px; flex-shrink: 0; }
+      .res-ring svg { width: 100%; height: 100%; }
+      .res-ring .ring-bg { stroke: var(--line); fill: none; stroke-width: 3; }
+      .res-ring .ring-fg { stroke: var(--green); fill: none; stroke-width: 3; stroke-linecap: round; transform: rotate(-90deg); transform-origin: center; transition: stroke-dashoffset 400ms ease; }
+      .res-ring.amber .ring-fg { stroke: var(--amber); }
+      .res-ring.blue .ring-fg { stroke: var(--blue); }
+      .res-ring .ring-val { position: absolute; inset: 0; display: grid; place-items: center; color: var(--ink); font-family: var(--display); font-size: 14px; font-weight: 800; font-variant-numeric: tabular-nums; letter-spacing: -0.02em; }
+      .res-ring .ring-val .u { font-size: 8px; color: var(--faint); margin-left: 1px; font-family: var(--mono); }
+      .res-info { display: grid; gap: 4px; min-width: 0; flex: 1; }
+      .res-info .k { color: var(--faint); font-family: var(--mono); font-size: 9px; letter-spacing: 0.1em; text-transform: uppercase; }
+      .res-info .v { color: var(--ink); font-family: var(--display); font-size: 16px; font-weight: 800; line-height: 1; font-variant-numeric: tabular-nums; letter-spacing: -0.01em; display: flex; align-items: baseline; gap: 3px; }
+      .res-info .v .u { font-size: 10px; color: var(--muted); font-family: var(--mono); font-weight: 600; }
+      .res-compass { position: absolute; bottom: 36px; right: 16px; width: 22px; height: 22px; border: 1px solid var(--line-2); border-radius: 50%; background: color-mix(in oklch, var(--bg) 60%, transparent); flex-shrink: 0; }
+      .res-compass::after { content: ""; position: absolute; top: 50%; left: 50%; width: 1px; height: 14px; background: linear-gradient(180deg, var(--green) 0%, var(--green) 50%, var(--ink) 50%, var(--ink) 100%); transform: translate(-50%, -50%) rotate(var(--rot, 0deg)); transform-origin: center; }
+      .res-compass .dir { position: absolute; top: -13px; left: 50%; transform: translateX(-50%); color: var(--faint); font-family: var(--mono); font-size: 8px; font-weight: 800; letter-spacing: 0.05em; }
+      .res-bar { height: 4px; border-radius: 999px; background: var(--line); overflow: hidden; margin-top: auto; }
+      .res-bar i { display: block; height: 100%; border-radius: inherit; background: linear-gradient(90deg, color-mix(in oklch, var(--green) 50%, transparent), var(--green)); }
+      .res-bar.amber i { background: linear-gradient(90deg, color-mix(in oklch, var(--amber) 50%, transparent), var(--amber)); }
+      .res-bar.blue i { background: linear-gradient(90deg, color-mix(in oklch, var(--blue) 50%, transparent), var(--blue)); }
+      .res-bar-label { display: flex; justify-content: space-between; font-family: var(--mono); font-size: 9px; color: var(--faint); letter-spacing: 0.05em; margin-top: 4px; }
+      .res-bar-label b { color: var(--text); font-weight: 800; }
+
+      /* SIDE PANEL */
+      .side { position: relative; display: grid; grid-template-rows: 52px minmax(0, 1fr); min-width: 0; min-height: 0; overflow: hidden; border-left: 1px solid color-mix(in oklch, var(--line) 86%, black); background: linear-gradient(180deg, rgba(255,255,255,0.035), transparent 200px), color-mix(in oklch, var(--surface) 86%, black); box-shadow: -22px 0 70px rgba(0,0,0,0.22); }
+      .side-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 0 10px; border-bottom: 1px solid var(--line); cursor: grab; user-select: none; background: color-mix(in oklch, var(--bg) 50%, transparent); }
+      .side-head.dragging { cursor: grabbing; }
+      .side-title { display: flex; min-width: 0; align-items: center; gap: 8px; color: var(--ink); font-size: 13px; font-weight: 800; }
+      .side-title .state-line { width: 3px; height: 20px; border-radius: 999px; background: var(--green); box-shadow: 0 0 6px var(--green-glow); }
+      .side-actions { display: flex; gap: 4px; }
+      .panel { display: none; min-height: 0; overflow: hidden; }
+      .panel.active { display: grid; }
+      .collab-panel { grid-template-rows: minmax(0, 1fr); }
+
+      .flow { display: grid; align-content: start; gap: 10px; min-height: 0; overflow: auto; padding: 12px 12px 110px; scrollbar-width: none; }
+      .flow::-webkit-scrollbar { display: none; }
+
+      .flow-block { position: relative; display: grid; grid-template-columns: 32px minmax(0, 1fr); gap: 10px; }
+      .flow-block::before { content: ""; position: absolute; left: 15px; top: 36px; bottom: -10px; width: 1px; background: linear-gradient(180deg, var(--line-2), transparent); }
+      .flow-block:last-child::before { display: none; }
+
+      .avatar { display: grid; place-items: center; width: 30px; height: 30px; border: 1px solid color-mix(in oklch, var(--line) 84%, black); border-radius: 50%; background: color-mix(in oklch, var(--surface-2) 84%, black); color: var(--muted); font-size: 11px; font-weight: 800; z-index: 1; }
+      .avatar.system { border-color: var(--green); background: linear-gradient(135deg, color-mix(in oklch, var(--green) 40%, var(--surface)), var(--surface-2)); color: var(--ink); }
+      .avatar.user { border-color: var(--amber); background: linear-gradient(135deg, color-mix(in oklch, var(--amber) 30%, var(--surface)), var(--surface-2)); color: var(--amber); }
+
+      .bubble { min-width: 0; border: 1px solid color-mix(in oklch, var(--line) 84%, black); border-radius: var(--radius-md); background: linear-gradient(180deg, rgba(255,255,255,0.035), transparent), color-mix(in oklch, var(--surface) 86%, black); box-shadow: inset 0 1px 0 rgba(255,255,255,0.035); overflow: hidden; }
+      .bubble.selected { border-color: var(--green); box-shadow: 0 0 0 1px var(--green-glow); }
+      .bubble-head { display: flex; justify-content: space-between; gap: 10px; padding: 7px 11px; border-bottom: 1px solid color-mix(in oklch, var(--line) 82%, black); background: color-mix(in oklch, var(--bg) 30%, transparent); }
+      .bubble-head strong { color: var(--ink); font-size: 12px; font-weight: 800; display: flex; align-items: center; gap: 6px; }
+      .bubble-head .tag { display: inline-flex; align-items: center; height: 16px; padding: 0 5px; border-radius: 3px; background: var(--green-soft); color: var(--green); font-family: var(--mono); font-size: 9px; font-weight: 800; letter-spacing: 0.05em; margin-left: 4px; }
+      .bubble-head span { color: var(--faint); font-family: var(--mono); font-size: 10px; letter-spacing: 0.04em; }
+      .bubble p { margin: 0; padding: 9px 11px; color: var(--text); font-size: 12px; line-height: 1.5; }
+
+      .step { margin: 7px 8px 8px; overflow: hidden; border: 1px solid color-mix(in oklch, var(--line) 84%, black); border-radius: var(--radius-sm); background: color-mix(in oklch, var(--surface) 78%, black); }
+      .step-title { display: flex; justify-content: space-between; gap: 8px; align-items: center; padding: 7px 10px; border-bottom: 1px solid color-mix(in oklch, var(--line) 82%, black); color: var(--ink); font-size: 11px; font-weight: 800; background: color-mix(in oklch, var(--bg) 30%, transparent); }
+      .step-title .count { display: inline-flex; align-items: center; gap: 3px; color: var(--faint); font-family: var(--mono); font-size: 10px; font-weight: 700; }
+      .step-title .count .d { color: var(--green); }
+
+      .task-row { display: grid; grid-template-columns: 18px minmax(0, 1fr) auto; gap: 9px; align-items: center; width: 100%; border: 0; border-top: 1px solid color-mix(in oklch, var(--line) 72%, black); padding: 7px 10px; background: transparent; color: var(--text); text-align: left; transition: 120ms ease; }
+      .task-row:first-of-type { border-top: 0; }
+      .task-row:hover { background: color-mix(in oklch, var(--bg) 50%, transparent); }
+      .task-row.selected { background: linear-gradient(90deg, var(--green-soft), transparent 80%); }
+      .task-row.failed { background: var(--red-soft); }
+      .task-row.stopped { background: color-mix(in oklch, var(--surface-2) 56%, black); opacity: 0.78; }
+      .task-row[role="button"] { cursor: pointer; }
+      .glyph { display: grid; place-items: center; width: 16px; height: 16px; border: 1px solid color-mix(in oklch, var(--line-2) 76%, black); border-radius: 50%; color: var(--muted); font-size: 9px; background: var(--surface); }
+      .status-text { display: none; }
+      .done .glyph { border-color: var(--green); background: var(--green); color: var(--bg); }
+      .processing .glyph { border-color: var(--amber); color: var(--amber); box-shadow: 0 0 0 3px var(--amber-soft); animation: breath 1300ms ease-out infinite; }
+      .failed .glyph { border-color: var(--red); background: var(--red); color: var(--bg); }
+      .stopped .glyph { border-color: var(--faint); background: color-mix(in oklch, var(--bg) 72%, black); color: var(--faint); }
+      .task-copy { min-width: 0; }
+      .task-copy strong { display: block; overflow: hidden; color: var(--ink); font-size: 12px; text-overflow: ellipsis; white-space: nowrap; font-weight: 700; }
+      .task-copy span { display: block; overflow: hidden; margin-top: 2px; color: var(--faint); font-size: 10px; text-overflow: ellipsis; white-space: nowrap; letter-spacing: 0.02em; }
+      .task-actions { display: inline-flex; align-items: center; gap: 6px; margin-left: auto; }
+      .task-icon-btn {
+        display: inline-grid;
+        place-items: center;
+        width: 24px;
+        height: 24px;
+        border: 1px solid color-mix(in oklch, var(--line) 78%, black);
+        border-radius: 6px;
+        padding: 0;
+        background: color-mix(in oklch, var(--surface) 82%, black);
+        color: var(--muted);
+        transition: 150ms ease;
+      }
+      .task-icon-btn svg {
+        width: 13px;
+        height: 13px;
+        stroke: currentColor;
+        stroke-width: 1.8;
+        fill: none;
+        stroke-linecap: round;
+        stroke-linejoin: round;
+      }
+      .task-icon-btn:hover, .task-icon-btn.active {
+        border-color: color-mix(in oklch, var(--green) 44%, var(--line));
+        color: var(--ink);
+        background: color-mix(in oklch, var(--green) 12%, var(--surface));
+      }
+      .task-icon-btn.active { box-shadow: 0 0 0 1px color-mix(in oklch, var(--green) 18%, transparent); }
+      .retry-btn { border: 1px solid color-mix(in oklch, var(--red) 48%, transparent); border-radius: 5px; padding: 3px 6px; background: var(--red-soft); color: var(--red); font-size: 10px; font-weight: 700; }
+      .restart-btn { border: 1px solid color-mix(in oklch, var(--green) 48%, transparent); border-radius: 5px; padding: 3px 6px; background: var(--green-soft); color: var(--green); font-size: 10px; font-weight: 800; white-space: nowrap; }
+      .fail-note { margin: 0 9px 7px 37px; border-left: 2px solid var(--red); border-radius: 0 7px 7px 0; padding: 6px 9px; color: #efb7b0; background: rgba(220, 111, 99, 0.08); font-size: 11px; line-height: 1.45; }
+      .resume-note { margin: 0 9px 7px 37px; border-left: 2px solid var(--green); border-radius: 0 7px 7px 0; padding: 6px 9px; color: color-mix(in oklch, var(--green) 72%, white); background: var(--green-soft); font-size: 11px; line-height: 1.45; }
+      .resume-bar { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin: 8px; border: 1px solid color-mix(in oklch, var(--green) 42%, var(--line)); border-radius: var(--radius-sm); padding: 8px 10px; background: linear-gradient(90deg, var(--green-soft), transparent 86%); }
+      .resume-copy { min-width: 0; }
+      .resume-copy strong { display: block; color: var(--ink); font-size: 12px; font-weight: 800; }
+      .resume-copy span { display: block; overflow: hidden; margin-top: 2px; color: var(--muted); font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
+
+      .list-panel { grid-template-rows: minmax(0, 1fr); }
+      .item-list { display: grid; align-content: start; gap: 8px; min-height: 0; overflow: auto; padding: 12px 12px 110px; scrollbar-width: thin; scrollbar-color: var(--line-2) transparent; }
+      .item-list::-webkit-scrollbar { width: 5px; }
+      .item-list::-webkit-scrollbar-thumb { background: var(--line-2); border-radius: 999px; }
+
+      .queue-card, .history-card { display: grid; grid-template-columns: 4px minmax(0, 1fr) auto; gap: 10px; align-items: start; width: 100%; border: 1px solid color-mix(in oklch, var(--line) 84%, black); border-radius: var(--radius-md); padding: 10px 11px; background: linear-gradient(180deg, rgba(255,255,255,0.035), transparent), color-mix(in oklch, var(--surface) 86%, black); color: var(--text); text-align: left; }
+      .queue-card { cursor: default; }
+      .queue-card.selected, .history-card.selected { border-color: color-mix(in oklch, var(--green) 72%, var(--line)); background: var(--green-soft); }
+      .queue-card.rejected { background: color-mix(in oklch, var(--surface) 60%, black); }
+      .queue-card.rejected .list-copy { opacity: 0.68; }
+      .status-bar { width: 3px; min-height: 44px; border-radius: 999px; background: var(--line); }
+      .queue-card.active .status-bar { background: var(--green); box-shadow: 0 0 6px var(--green-glow); }
+      .queue-card.waiting .status-bar { background: var(--amber); }
+      .queue-card.rejected .status-bar { background: var(--faint); }
+      .history-card .status-bar { background: var(--blue); }
+      .list-copy { min-width: 0; }
+      .list-copy strong { display: block; overflow: hidden; color: var(--ink); font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
+      .list-copy p { display: -webkit-box; margin: 5px 0 0; overflow: hidden; color: var(--muted); font-size: 12px; line-height: 1.45; -webkit-box-orient: vertical; -webkit-line-clamp: 1; }
+      .selected .list-copy p { display: block; overflow: visible; color: var(--text); }
+      .list-meta { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 7px; color: var(--faint); font-size: 10px; font-family: var(--mono); letter-spacing: 0.02em; }
+      .list-meta span { display: inline-flex; align-items: center; gap: 3px; padding: 1px 5px; border: 1px solid var(--line); border-radius: 3px; background: var(--bg); }
+      .action-btn { align-self: center; border: 1px solid var(--line); border-radius: 6px; padding: 6px 9px; background: var(--surface-2); color: var(--text); font-size: 11px; font-weight: 600; white-space: nowrap; }
+      .active .action-btn { border-color: var(--green); background: var(--green); color: var(--bg); font-weight: 800; }
+      .rejected .action-btn { border-color: rgba(136, 201, 166, 0.38); color: #b8d8c7; }
+
+      .handle { position: absolute; top: 50%; right: 0; z-index: 11; display: none; width: 28px; height: 96px; margin-top: -48px; padding: 0; border: 0; border-radius: 10px 0 0 10px; background: linear-gradient(180deg, color-mix(in oklch, var(--bg-1) 78%, var(--surface-2)) 0%, color-mix(in oklch, var(--surface-2) 92%, var(--bg-1)) 50%, color-mix(in oklch, var(--bg-1) 78%, var(--surface-2)) 100%); color: var(--muted); cursor: grab; box-shadow: inset 1px 0 0 color-mix(in oklch, var(--line-2) 55%, transparent), inset 0 1px 0 rgba(255, 255, 255, 0.06), inset 0 -1px 0 rgba(0, 0, 0, 0.45), -2px 0 14px rgba(0, 0, 0, 0.5); transition: color 220ms ease, transform 220ms cubic-bezier(0.2, 0.8, 0.2, 1), box-shadow 220ms ease; overflow: hidden; }
+      .handle:hover { color: color-mix(in oklch, var(--green) 65%, var(--ink)); transform: translateX(-3px); box-shadow: inset 1px 0 0 color-mix(in oklch, var(--green) 32%, transparent), inset 0 1px 0 rgba(255, 255, 255, 0.08), inset 0 -1px 0 rgba(0, 0, 0, 0.45), -3px 0 18px rgba(0, 0, 0, 0.55), 0 0 0 1px color-mix(in oklch, var(--green) 18%, transparent); }
+      .handle:active { cursor: grabbing; transform: translateX(-1px) scaleY(0.995); }
+      .handle:focus-visible { outline: none; box-shadow: inset 1px 0 0 color-mix(in oklch, var(--green) 32%, transparent), inset 0 1px 0 rgba(255, 255, 255, 0.08), inset 0 -1px 0 rgba(0, 0, 0, 0.45), 0 0 0 2px color-mix(in oklch, var(--green) 55%, transparent); }
+      .handle::after { content: ""; position: absolute; top: 10px; bottom: 10px; right: 0; width: 1px; background: linear-gradient(180deg, transparent 0%, color-mix(in oklch, var(--green) 60%, transparent) 50%, transparent 100%); opacity: 0.5; transition: opacity 220ms ease; pointer-events: none; }
+      .handle:hover::after { opacity: 1; }
+      .side-collapsed .handle { display: block; }
+      .handle-grip { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; pointer-events: none; }
+      .handle-grip i { display: block; width: 1.5px; height: 12px; border-radius: 1px; background: color-mix(in oklch, currentColor 50%, transparent); transition: background 220ms ease, height 240ms cubic-bezier(0.2, 0.8, 0.2, 1), transform 240ms cubic-bezier(0.2, 0.8, 0.2, 1); }
+      .handle-grip i:nth-child(2), .handle-grip i:nth-child(4) { height: 7px; }
+      .handle:hover .handle-grip i { background: color-mix(in oklch, var(--green) 78%, var(--ink)); height: 15px; }
+      .handle:hover .handle-grip i:nth-child(2), .handle:hover .handle-grip i:nth-child(4) { height: 9px; }
+      .handle-led { position: absolute; top: 11px; left: 50%; transform: translateX(-50%); width: 4px; height: 4px; border-radius: 50%; background: var(--green); box-shadow: 0 0 4px var(--green-glow); animation: handle-led-pulse 2.4s ease-in-out infinite; pointer-events: none; }
+      @keyframes handle-led-pulse { 0%, 100% { opacity: 0.55; box-shadow: 0 0 3px var(--green-glow); } 50% { opacity: 1; box-shadow: 0 0 7px var(--green-glow), 0 0 12px var(--green-glow); } }
+      .handle-chev { position: absolute; top: 50%; right: 5px; transform: translateY(-50%) rotate(45deg); width: 7px; height: 7px; border-right: 1.5px solid currentColor; border-top: 1.5px solid currentColor; opacity: 0; transition: opacity 200ms ease, transform 240ms cubic-bezier(0.2, 0.8, 0.2, 1); pointer-events: none; }
+      .handle:hover .handle-chev { opacity: 1; transform: translateY(-50%) rotate(45deg) translate(2px, -2px); }
+      .side-left.side-collapsed .handle { right: auto; left: 0; border-radius: 0 10px 10px 0; box-shadow: inset -1px 0 0 color-mix(in oklch, var(--line-2) 55%, transparent), inset 0 1px 0 rgba(255, 255, 255, 0.06), inset 0 -1px 0 rgba(0, 0, 0, 0.45), 2px 0 14px rgba(0, 0, 0, 0.5); }
+      .side-left.side-collapsed .handle:hover { transform: translateX(3px); box-shadow: inset -1px 0 0 color-mix(in oklch, var(--green) 32%, transparent), inset 0 1px 0 rgba(255, 255, 255, 0.08), inset 0 -1px 0 rgba(0, 0, 0, 0.45), 3px 0 18px rgba(0, 0, 0, 0.55), 0 0 0 1px color-mix(in oklch, var(--green) 18%, transparent); }
+      .side-left.side-collapsed .handle::after { right: auto; left: 0; }
+      .side-left.side-collapsed .handle-chev { right: auto; left: 5px; border-right: 0; border-left: 1.5px solid currentColor; transform: translateY(-50%) rotate(-45deg); }
+      .side-left.side-collapsed .handle:hover .handle-chev { transform: translateY(-50%) rotate(-45deg) translate(-2px, -2px); }
+
+      .command-dock { position: absolute; left: calc(var(--rail) + (100vw - var(--rail)) / 2); bottom: 18px; z-index: 15; display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 12px; align-items: center; width: min(680px, calc(100vw - var(--rail) - 42px)); min-height: 84px; border: 1px solid color-mix(in oklch, var(--line-2) 70%, var(--green)); border-radius: 22px; padding: 10px 12px 10px 18px; background: linear-gradient(180deg, rgba(255,255,255,0.08), rgba(255,255,255,0.025)), color-mix(in oklch, var(--surface-2) 25%, transparent); box-shadow: var(--dock-shadow); backdrop-filter: blur(18px) saturate(118%); transform: translate(-50%, 28px); opacity: 0; pointer-events: none; transition: transform 220ms ease, opacity 220ms ease; }
+      .command-dock.show { transform: translate(-50%, 0); opacity: 1; pointer-events: auto; }
+      .workspace:not(.side-collapsed) ~ .command-dock { left: calc(var(--rail) + (100vw - var(--rail) - var(--side-width)) / 2); width: min(680px, calc(100vw - var(--rail) - var(--side-width) - 42px)); }
+      .workspace.side-left:not(.side-collapsed) ~ .command-dock { left: calc(var(--rail) + var(--side-width) + (100vw - var(--rail) - var(--side-width)) / 2); }
+      .context-chip { display: none; grid-column: 1 / -1; justify-self: start; max-width: 460px; overflow: hidden; border: 1px solid color-mix(in oklch, var(--green) 35%, transparent); border-radius: 999px; padding: 4px 10px; background: var(--green-soft); color: color-mix(in oklch, var(--green) 78%, white); font-size: 11px; font-family: var(--mono); letter-spacing: 0.02em; text-overflow: ellipsis; white-space: nowrap; }
+      .command-dock.has-context .context-chip { display: block; }
+      textarea { width: 100%; min-height: 56px; max-height: 112px; resize: none; border: 0; border-radius: 14px; padding: 12px 0; background: transparent; color: var(--ink); font-size: 14px; line-height: 1.45; outline: none; }
+      textarea::placeholder { color: color-mix(in oklch, var(--muted) 78%, white); }
+      .dock-tools { display: flex; gap: 6px; align-items: center; }
+      .dock-tools .icon-btn { width: 38px; height: 38px; border-color: color-mix(in oklch, var(--line-2) 58%, transparent); border-radius: 50%; background: rgba(255, 255, 255, 0.04); }
+      .dock-tools button[type="submit"] { color: var(--bg); background: var(--green); border-color: var(--green); box-shadow: 0 0 0 4px var(--green-soft); }
+      .voice-dot { position: relative; }
+      .voice-dot.recording { color: var(--red); border-color: var(--red); background: var(--red-soft); }
+      .visually-hidden {
+        position: absolute;
+        width: 1px;
+        height: 1px;
+        padding: 0;
+        margin: -1px;
+        overflow: hidden;
+        clip: rect(0, 0, 0, 0);
+        white-space: nowrap;
+        border: 0;
+      }
+
+      .event-card { position: absolute; right: 24px; bottom: 24px; z-index: 18; width: min(440px, calc(100vw - var(--rail) - 48px)); border: 1px solid color-mix(in oklch, var(--amber) 50%, var(--line)); border-radius: var(--radius-lg); padding: 16px; background: linear-gradient(135deg, color-mix(in oklch, var(--amber) 10%, transparent), transparent 45%), linear-gradient(180deg, rgba(255,255,255,0.065), transparent), color-mix(in oklch, var(--surface-2) 88%, black); box-shadow: var(--shadow); transform: translateY(18px); opacity: 0; pointer-events: none; transition: 220ms ease; }
+      .event-card.show { transform: translateY(0); opacity: 1; pointer-events: auto; }
+      .event-kicker { display: flex; justify-content: space-between; gap: 10px; color: var(--amber); font-family: var(--mono); font-size: 10px; letter-spacing: 0.06em; text-transform: uppercase; }
+      .event-card h2 { margin: 10px 0 7px; color: var(--ink); font-size: 18px; font-weight: 800; }
+      .event-card p { margin: 0; color: var(--muted); font-size: 13px; line-height: 1.6; }
+      .event-actions { display: flex; gap: 8px; margin-top: 14px; }
+      .primary-btn, .ghost-btn { border: 1px solid color-mix(in oklch, var(--line) 84%, black); border-radius: 8px; padding: 9px 14px; background: color-mix(in oklch, var(--surface) 82%, black); color: var(--text); font-size: 12px; font-weight: 700; }
+      .primary-btn { border-color: var(--green); background: var(--green); color: var(--bg); font-weight: 800; }
+      .readonly .command-dock { display: none; }
+
+      .empty-canvas { display: grid; min-height: min(56vh, 560px); place-items: center; border: 1px dashed color-mix(in oklch, var(--line-2) 82%, transparent); border-radius: var(--radius-lg); background: linear-gradient(color-mix(in oklch, var(--green) 8%, transparent) 1px, transparent 1px), linear-gradient(90deg, color-mix(in oklch, var(--green) 8%, transparent) 1px, transparent 1px), linear-gradient(180deg, color-mix(in oklch, var(--surface-2) 84%, transparent), color-mix(in oklch, var(--surface) 70%, transparent)); background-size: 40px 40px; color: var(--muted); text-align: center; box-shadow: inset 0 1px 0 rgba(255,255,255,0.035); }
+      .empty-canvas h2 { margin: 0 0 8px; color: var(--ink); font-size: 18px; }
+      .empty-canvas p { margin: 0; max-width: 390px; font-size: 13px; line-height: 1.7; }
+
+      @keyframes breath { from { transform: scale(0.92); opacity: 0.85; } to { transform: scale(1.35); opacity: 0; } }
+      @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
+      @keyframes scan { 0% { transform: translateY(-100%); } 100% { transform: translateY(380%); } }
+      @keyframes blink { 0%, 60% { opacity: 1; } 80%, 100% { opacity: 0.3; } }
+      @keyframes map-pulse { 0% { r: 4; opacity: 0.9; } 100% { r: 22; opacity: 0; } }
+
+      @media (max-width: 1100px) {
+        .card-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+        .resource-body { grid-template-columns: 1fr; }
+        .res-col { border-right: 0; border-bottom: 1px solid var(--line); }
+        .res-col:last-child { border-bottom: 0; }
+      }
+      @media (max-width: 900px) {
+        .workspace { grid-template-columns: minmax(0, 1fr); }
+        .workspace.side-left { grid-template-columns: minmax(0, 1fr); }
+        .side { position: absolute; top: 0; right: 0; bottom: 0; z-index: 10; width: min(var(--side-width), calc(100vw - var(--rail))); box-shadow: var(--shadow); }
+        .workspace.side-left .side { left: 0; right: auto; }
+        .workspace.side-collapsed .side { display: none; }
+        .plan-body, .profile-body, .cam-grid { grid-template-columns: 1fr; }
+        .plan-banner { border-right: 0; border-bottom: 1px solid var(--line); }
+        .profile-id { border-right: 0; border-bottom: 1px solid var(--line); }
+        .cam:nth-child(2n) { border-right: 0; }
+        .cam:nth-child(n+3) { border-bottom: 0; }
+      }
+      @media (max-width: 640px) {
+        :root { --rail: 52px; --top: 74px; }
+        .topbar { grid-template-columns: minmax(0, 1fr) auto; grid-template-rows: auto auto; height: auto; padding: 8px; gap: 6px; }
+        .brand-divider, .incident { display: none; }
+        .card-grid { grid-template-columns: 1fr; }
+        .command-dock { grid-template-columns: 1fr; width: calc(100vw - var(--rail) - 20px); left: calc(var(--rail) + (100vw - var(--rail)) / 2); border-radius: 20px; }
+      }
+      @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition: none !important; } }
+    </style>
+  </head>
+  <body>
+    <main class="app" id="app">
+      <nav class="left-rail" aria-label="全局控制">
+        <div class="rail-mark"><div class="seal">警</div></div>
+        <div class="rail-group">
+          <button class="rail-btn active" type="button" data-mode="collab" aria-label="协作" title="协作">
+            <svg viewBox="0 0 24 24"><path d="M7 8h10"></path><path d="M7 12h7"></path><path d="M5 20l3-3h9a3 3 0 0 0 3-3V7a3 3 0 0 0-3-3H7a3 3 0 0 0-3 3v7a3 3 0 0 0 3 3"></path></svg>
+            <span class="badge">2</span>
+          </button>
+          <button class="rail-btn" type="button" data-mode="queue" aria-label="待办" title="待办">
+            <svg viewBox="0 0 24 24"><path d="M8 6h13"></path><path d="M8 12h13"></path><path d="M8 18h13"></path><path d="M3 6h.01"></path><path d="M3 12h.01"></path><path d="M3 18h.01"></path></svg>
+            <span class="badge">3</span>
+          </button>
+          <button class="rail-btn" type="button" data-mode="history" aria-label="历史" title="历史">
+            <svg viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 3-6.7"></path><path d="M3 4v5h5"></path><path d="M12 7v5l3 2"></path></svg>
+          </button>
+        </div>
+        <div class="rail-group bottom">
+          <button class="rail-btn" id="railVoice" type="button" aria-label="语音输入" title="语音输入">
+            <svg viewBox="0 0 24 24"><path d="M12 3a3 3 0 0 0-3 3v6a3 3 0 0 0 6 0V6a3 3 0 0 0-3-3Z"></path><path d="M19 10v2a7 7 0 0 1-14 0v-2"></path><path d="M12 19v3"></path></svg>
+          </button>
+          <button class="rail-btn" id="railCommand" type="button" aria-label="指令输入" title="指令输入" aria-pressed="false">
+            <svg viewBox="0 0 24 24"><path d="m4 17 6-6-6-6"></path><path d="M12 19h8"></path></svg>
+          </button>
+        </div>
+      </nav>
+
+      <header class="topbar">
+        <div class="brand">
+          <div>
+            <h1>警情处置控制台</h1>
+          </div>
+        </div>
+      </header>
+
+      <section class="workspace side-collapsed" id="workspace">
+        <section class="cards" aria-label="业务卡片工作区">
+
+          <!-- <div class="empty-canvas">
+          </div> -->
+
+          <div class="card-grid" id="cardGrid"></div>
+        </section>
+
+        <aside class="side" id="sidePanel" aria-label="侧边区域" aria-hidden="true">
+          <div class="side-head" id="sideHead">
+            <div class="side-title"><span class="state-line"></span><span id="sideTitle">协作</span></div>
+            <div class="side-actions">
+              <button class="icon-btn" id="dockSideBtn" type="button" aria-label="左右吸附" title="左右吸附"><svg viewBox="0 0 24 24"><path d="M8 7H4l4-4"></path><path d="M4 7h16"></path><path d="M16 17h4l-4 4"></path><path d="M20 17H4"></path></svg></button>
+              <button class="icon-btn" id="collapseSideBtn" type="button" aria-label="收起侧边区域" title="收起"><svg viewBox="0 0 24 24"><path d="m15 18-6-6 6-6"></path></svg></button>
+            </div>
+          </div>
+          <section class="panel collab-panel active" id="collabPanel"><div class="flow" id="flowList"></div></section>
+          <section class="panel list-panel" id="queuePanel"><div class="item-list" id="queueList"></div></section>
+          <section class="panel list-panel" id="historyPanel"><div class="item-list" id="historyList"></div></section>
+        </aside>
+
+        <button class="handle" id="sideHandle" type="button" aria-label="展开侧边区域" title="展开侧边区域">
+          <span class="handle-led" aria-hidden="true"></span>
+          <span class="handle-grip" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i></span>
+          <span class="handle-chev" aria-hidden="true"></span>
+        </button>
+      </section>
+
+      <article class="event-card show" id="eventCard" aria-live="polite">
+        <div class="event-kicker"><span>14:20:18</span><span>CH01-20260602</span></div>
+        <h2>南广场交通事故</h2>
+        <p>报警人称落客区两车碰撞，现场通行受阻。事件已携带处置流程，可直接进入工作台。</p>
+        <div class="event-actions"><button class="primary-btn" id="acceptEvent" type="button">处置</button><button class="ghost-btn" id="declineEvent" type="button">不处置</button></div>
+      </article>
+
+      <form class="command-dock" id="commandDock" aria-hidden="true">
+        <div class="context-chip" id="dockContext"></div>
+        <textarea id="commandInput" rows="1" placeholder="输入纠正指令、补充材料或临时协查要求"></textarea>
+        <div class="dock-tools">
+          <input class="visually-hidden" id="dockFileInput" type="file" aria-label="上传文件">
+          <button class="icon-btn" id="dockFileTrigger" type="button" aria-label="上传文件" title="上传文件" aria-controls="dockFileInput"><svg viewBox="0 0 24 24"><path d="M21.44 11.05 12.25 20.24a6 6 0 1 1-8.49-8.49l9.2-9.19a4 4 0 1 1 5.65 5.65l-9.2 9.2a2 2 0 0 1-2.82-2.83l8.48-8.48"></path></svg></button>
+          <button class="icon-btn voice-dot" id="dockVoice" type="button" aria-label="语音输入" title="语音输入"><svg viewBox="0 0 24 24"><path d="M12 3a3 3 0 0 0-3 3v6a3 3 0 0 0 6 0V6a3 3 0 0 0-3-3Z"></path><path d="M19 10v2a7 7 0 0 1-14 0v-2"></path><path d="M12 19v3"></path></svg></button>
+          <button class="icon-btn" type="submit" aria-label="发送指令" title="发送"><svg viewBox="0 0 24 24"><path d="m5 12 14-7-7 14-2-5-5-2Z"></path></svg></button>
+        </div>
+      </form>
+    </main>
+
+    <script>
+      const taskSteps = [
+        { id: "step_incident_facts", title: "警情要素识别", tasks: [ { id: "task_load_dispatch_resources", status: "done", title: "提取出警设备和人员", note: "出警设备和人员信息已识别", card: null } ] },
+        { id: "step_basic_assessment", title: "基础研判", tasks: [
+          { id: "task_lookup_address_by_incident_address", status: "done", title: "根据事发地址检索地点", note: "事发地址已检索", card: "location" },
+          { id: "task_lookup_address_by_coordinate", status: "done", title: "根据经纬度定位地点", note: "坐标定位已生成", card: "location" },
+          { id: "task_check_caller_background", status: "done", title: "查询报警人背景", note: "报警人信息已关联", card: "profile" },
+          { id: "task_query_disposal_plan", status: "stopped", title: "查询处置预案", note: "用户停止 · 等待重新开始", card: "plan", stopped: true },
+          { id: "task_open_police_resources_panel", status: "stopped", title: "打开可调资源面板", note: "用户停止 · 等待重新开始", card: "resource", stopped: true }
+        ] },
+        { id: "step_scene_situation", title: "现场态势展开", tasks: [
+          { id: "task_open_nearby_surveillance", status: "done", title: "打开事发地周边监控", note: "周边监控画面已接入", card: "camera" },
+          { id: "task_open_nearby_police", status: "waiting", title: "打开事发地周边警力", note: "等待警力资源刷新", card: "resource" }
+        ] },
+        { id: "step_dispatch_resource_visualization", title: "出警资源可视化", tasks: [
+          { id: "task_play_dispatch_bwc", status: "stopped", title: "调阅出警民警单兵或执法仪", note: "用户停止 · 等待重新开始", card: null, stopped: true },
+          { id: "task_track_dispatch_police_car", status: "failed", title: "跟踪出警警车", note: "设备暂不可用", card: null, fail: "警车设备暂不可用，无法完成轨迹跟踪。可补充设备编号后重试。" }
+        ] }
+      ];
+
+      const queueItems = [
+        { id: "q1", state: "active", status: "指挥长张三处置中", title: "南广场交通事故", action: "协同处置", summary: "落客区两车碰撞，现场通行受阻，已进入协同处置。", full: "报警人称南广场西侧落客区发生两车碰撞，疑似有轻微人员受伤，现场车辆占用两条通道。当前由指挥长张三处置中，周边监控与警力资源正在接入。", meta: ["14:20", "CH01-20260602", "西侧落客区"] },
+        { id: "q2", state: "waiting", status: "等待处置", title: "神舟路地铁站周边聚集", action: "处置", summary: "站外出入口人群聚集，等待确认是否处置。", full: "神舟路地铁站 B 口附近出现短时人群聚集，来源为重点区域感知预警。暂未发现明显冲突，建议确认现场视频后决定是否处置。", meta: ["14:35", "重点区域"] },
+        { id: "q3", state: "waiting", status: "等待处置", title: "重点设施告警", action: "处置", summary: "设施侧门异常开启，等待人工确认。", full: "重点设施侧门在非通行时段出现异常开启记录，关联门禁日志和周边摄像头。需要确认是否为维护人员操作。", meta: ["14:50", "设施告警"] },
+        { id: "q4", state: "rejected", status: "已不处置", title: "群众求助记录", action: "处置", summary: "用户选择不处置，保留记录。", full: "该群众求助已由值班人员判断为非警情处置范围，记录保留在队列中，可回看但不抢占当前处置注意力。", meta: ["15:02", "关闭记录"] }
+      ];
+
+      const historyItems = [
+        { id: "h1", commander: "指挥长张三已处置", title: "东门车辆剐蹭", summary: "双方已撤离现场，交通恢复正常。", full: "东门车辆剐蹭处置完成，双方信息已登记，现场交通恢复正常。", meta: ["昨日 18:42", "处置完成"] },
+        { id: "h2", commander: "指挥长李四已处置", title: "神舟路地铁周边协查", summary: "完成周边监控回看，无异常聚集延续。", full: "神舟路地铁周边协查已完成，回看 B 口、C 口和公交站三路监控，未发现异常聚集延续。", meta: ["昨日 21:16", "已归档"] },
+        { id: "h3", commander: "指挥长张三已处置", title: "重点设施误报", summary: "确认维护人员操作，警情关闭。", full: "重点设施告警经门禁日志和现场电话确认，为维护人员操作导致的误报，已关闭。", meta: ["05-31", "误报关闭"] },
+        { id: "h4", commander: "指挥长张三已处置", title: "南侧道路拥堵", summary: "临时疏导完成，拥堵解除。", full: "南侧道路拥堵由临停车辆导致，铁骑到场疏导后恢复通行，未形成进一步警情。", meta: ["05-30", "已完成"] }
+      ];
+
+      const CARD_DEFS = {
+        location: {
+          title: "事发地址定位",
+          sub: "CH01 · 30.6586N 104.0664E",
+          icon: '<svg viewBox="0 0 24 24"><path d="M12 21s-7-7.5-7-12a7 7 0 1 1 14 0c0 4.5-7 12-7 12z" /><circle cx="12" cy="9" r="2.5" /></svg>',
+          body: `
+            <div class="map-wrap">
+              <svg class="map-svg" viewBox="0 0 400 320" preserveAspectRatio="xMidYMid slice" aria-hidden="true">
+                <g class="grid-line" stroke-width="0.5">
+                  <line x1="80" y1="0" x2="80" y2="320" /><line x1="160" y1="0" x2="160" y2="320" /><line x1="240" y1="0" x2="240" y2="320" /><line x1="320" y1="0" x2="320" y2="320" />
+                  <line x1="0" y1="80" x2="400" y2="80" /><line x1="0" y1="160" x2="400" y2="160" /><line x1="0" y1="240" x2="400" y2="240" />
+                </g>
+                <g>
+                  <rect class="block" x="20" y="20" width="80" height="60" rx="3" /><rect class="block" x="115" y="20" width="100" height="40" rx="3" /><rect class="block" x="230" y="20" width="60" height="80" rx="3" /><rect class="block" x="305" y="20" width="75" height="50" rx="3" />
+                  <rect class="block" x="20" y="100" width="60" height="80" rx="3" /><rect class="block" x="95" y="85" width="50" height="55" rx="3" /><rect class="block" x="305" y="95" width="75" height="65" rx="3" />
+                  <rect class="block" x="20" y="200" width="100" height="50" rx="3" /><rect class="block" x="135" y="195" width="60" height="65" rx="3" /><rect class="block" x="210" y="200" width="80" height="50" rx="3" /><rect class="block" x="305" y="180" width="75" height="90" rx="3" />
+                  <rect class="block" x="20" y="265" width="120" height="40" rx="3" /><rect class="block" x="155" y="270" width="100" height="35" rx="3" /><rect class="block" x="270" y="275" width="110" height="30" rx="3" />
+                </g>
+                <g>
+                  <text class="block-name" x="60" y="55" text-anchor="middle">春熙商圈</text><text class="block-name" x="165" y="42" text-anchor="middle">太古里</text><text class="block-name" x="260" y="60" text-anchor="middle">IFS</text>
+                  <text class="block-name" x="50" y="145" text-anchor="middle">大业路</text><text class="block-name" x="338" y="130" text-anchor="middle">红星路</text>
+                  <text class="block-name" x="70" y="232" text-anchor="middle">南广场</text><text class="block-name" x="345" y="225" text-anchor="middle">锦江宾馆</text>
+                </g>
+                <path class="water" d="M 0 240 Q 60 230 120 245 T 240 240 Q 300 235 360 250 T 400 245 L 400 320 L 0 320 Z" />
+                <text class="water-name" x="280" y="295">锦 江</text>
+                <g>
+                  <path class="road major" d="M 0 60 L 400 75" stroke-width="4" /><path class="road major" d="M 200 0 L 215 320" stroke-width="4" /><path class="road major" d="M 0 195 L 400 195" stroke-width="3" />
+                  <path class="road" d="M 0 130 L 400 130" stroke-width="2" /><path class="road" d="M 80 0 L 80 320" stroke-width="2" /><path class="road" d="M 320 0 L 320 320" stroke-width="2" />
+                  <path class="road minor" d="M 0 30 L 400 30" stroke-width="1" /><path class="road minor" d="M 140 0 L 140 320" stroke-width="1" /><path class="road minor" d="M 260 0 L 260 320" stroke-width="1" /><path class="road minor" d="M 0 280 L 400 280" stroke-width="1" />
+                </g>
+                <g>
+                  <path class="road-dash" d="M 215 195 L 215 80 L 240 60" /><path class="road-dash" d="M 215 195 L 130 195" /><path class="road-dash" d="M 215 195 L 320 195 L 320 130" />
+                </g>
+                <circle class="ring" cx="215" cy="195" r="34" /><circle class="ring" cx="215" cy="195" r="60" stroke-opacity="0.45" /><circle class="ring" cx="215" cy="195" r="92" stroke-opacity="0.22" />
+                <circle class="pin-pulse" cx="215" cy="195" r="4" /><circle class="pin-pulse delay-1" cx="215" cy="195" r="4" /><circle class="pin-pulse delay-2" cx="215" cy="195" r="4" />
+                <circle class="pin-incident" cx="215" cy="195" r="6" /><text class="pin-text" x="215" y="198">警</text>
+                <g><rect x="120" y="158" width="36" height="14" rx="2" class="label-bg" /><text class="label" x="138" y="168" text-anchor="middle">巡组 01</text><circle class="pin-dot" cx="138" cy="180" r="3.5" /></g>
+                <g><rect x="250" y="178" width="36" height="14" rx="2" class="label-bg" /><text class="label" x="268" y="188" text-anchor="middle">警车 A7</text><circle class="pin-amber" cx="268" cy="200" r="3.5" /></g>
+                <g><rect x="300" y="100" width="36" height="14" rx="2" class="label-bg" /><text class="label" x="318" y="110" text-anchor="middle">铁骑 03</text><circle class="pin-blue" cx="318" cy="122" r="3.5" /></g>
+                <g><rect x="80" y="200" width="40" height="14" rx="2" class="label-bg" /><text class="label" x="100" y="210" text-anchor="middle">南广场</text></g>
+              </svg>
+              <div class="map-overlay map-corner-tr"><div class="coords">30.6586°N 104.0664°E</div><div>WGS-84 · 14:21:08</div></div>
+              <div class="map-overlay map-corner-bl"><div class="compass"><span class="needle"></span></div><div class="scale-bar"><div class="bar"></div><span>0 ──── 200m</span></div></div>
+              <div class="map-legend">
+                <div class="row"><span class="dot" style="background:var(--red)"></span><span>事件点</span></div>
+                <div class="row"><span class="dot" style="background:var(--green)"></span><span>在岗警力</span></div>
+                <div class="row"><span class="dot" style="background:var(--amber)"></span><span>出警中</span></div>
+                <div class="row"><span class="dot" style="background:var(--blue)"></span><span>可调警力</span></div>
+              </div>
+              <div class="map-stats"><div class="item"><span>距指挥</span><span class="num">1.2</span><span>km</span></div><div class="item"><span>响应</span><span class="num">3.5</span><span>min</span></div></div>
+            </div>`
+        },
+        plan: {
+          title: "处置预案",
+          sub: "P-2026-TRF-018",
+          icon: '<svg viewBox="0 0 24 24"><path d="M9 11l3 3L22 4" /><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11" /></svg>',
+          body: `<div class="plan-body">
+            <div class="plan-banner">
+              <span class="label">已匹配预案</span>
+              <span class="name">交通事故先期处置</span>
+              <div class="confidence"><span class="v">92</span><span class="u">% conf.</span></div>
+              <div class="conf-bar"><i style="width:92%"></i></div>
+              <div class="id"><span>PLAN</span><b>3 步 · 5 动作</b></div>
+            </div>
+            <div class="plan-actions">
+              <div class="plan-row p1"><span class="pdot"></span><div><div class="txt">现场封控，确认伤亡</div><div class="sub">STEP 1 · 立即执行</div></div><span class="step-no">01</span></div>
+              <div class="plan-row p2"><span class="pdot"></span><div><div class="txt">调取周边监控与执法仪</div><div class="sub">STEP 1 · 并行接入</div></div><span class="step-no">02</span></div>
+              <div class="plan-row p2"><span class="pdot"></span><div><div class="txt">最近巡组 1.2km · ETA 3.5min</div><div class="sub">STEP 2 · 同步调度</div></div><span class="step-no">03</span></div>
+              <div class="plan-row p3"><span class="pdot"></span><div><div class="txt">通报交警与 120 · 等待接管</div><div class="sub">STEP 3 · 升级处置</div></div><span class="step-no">04</span></div>
+              <div class="plan-row p3"><span class="pdot"></span><div><div class="txt">若拥堵扩大，启动二级管控</div><div class="sub">STEP 3 · 预案分支</div></div><span class="step-no">05</span></div>
+            </div>
+          </div>`
+        },
+        camera: {
+          title: "周边监控",
+          sub: "4 路接入",
+          icon: '<svg viewBox="0 0 24 24"><rect x="3" y="6" width="14" height="12" rx="2" /><path d="M17 10l4-2v8l-4-2z" /></svg>',
+          body: `<div class="cam-grid">
+            <div class="cam"><div class="cam-scene"></div><div class="cam-glow" style="top:18%;left:22%;width:50%;height:40%"></div><div class="cam-grain"></div><div class="cam-scan"></div><div class="cam-corner tl"></div><div class="cam-corner tr"></div><div class="cam-corner bl"></div><div class="cam-corner br"></div><div class="cam-tag"><span class="live"></span>CAM-07</div><div class="cam-time">14:21:08</div><div class="cam-bbox" data-id="车辆 A" style="left:32%;top:46%;width:24%;height:20%"></div><div class="cam-meta"><span class="pos">路口东 · 25mm</span><span class="v">REC</span></div></div>
+            <div class="cam"><div class="cam-scene"></div><div class="cam-glow" style="top:32%;left:48%;width:42%;height:36%"></div><div class="cam-grain"></div><div class="cam-scan" style="animation-delay:-1s"></div><div class="cam-corner tl"></div><div class="cam-corner tr"></div><div class="cam-corner bl"></div><div class="cam-corner br"></div><div class="cam-tag"><span class="live"></span>CAM-12</div><div class="cam-time">14:21:08</div><div class="cam-meta"><span class="pos">落客区 · 12mm</span><span class="v">REC</span></div></div>
+            <div class="cam"><div class="cam-scene"></div><div class="cam-glow" style="top:22%;left:18%;width:46%;height:42%"></div><div class="cam-grain"></div><div class="cam-scan" style="animation-delay:-2s"></div><div class="cam-corner tl"></div><div class="cam-corner tr"></div><div class="cam-corner bl"></div><div class="cam-corner br"></div><div class="cam-tag"><span class="live"></span>CAM-18</div><div class="cam-time">14:21:08</div><div class="cam-bbox" data-id="人群 4" style="left:18%;top:55%;width:18%;height:24%"></div><div class="cam-meta"><span class="pos">广场入口 · 16mm</span><span class="v">REC</span></div></div>
+            <div class="cam"><div class="cam-scene"></div><div class="cam-glow" style="top:38%;left:32%;width:48%;height:32%"></div><div class="cam-grain"></div><div class="cam-scan" style="animation-delay:-3s"></div><div class="cam-corner tl"></div><div class="cam-corner tr"></div><div class="cam-corner bl"></div><div class="cam-corner br"></div><div class="cam-tag"><span class="live"></span>CAM-21</div><div class="cam-time">14:21:08</div><div class="cam-meta"><span class="pos">地下通道 · 8mm</span><span class="v">REC</span></div></div>
+          </div>`
+        },
+        profile: {
+          title: "报警人背景",
+          sub: "关联 12 维度",
+          icon: '<svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="4" /><path d="M4 21a8 8 0 0 1 16 0" /></svg>',
+          body: `<div class="profile-body">
+            <div class="profile-id">
+              <div class="profile-avatar">李</div>
+              <div><div class="name">李某某</div><div class="phone">138****6201</div></div>
+              <div class="profile-stats">
+                <div class="profile-stat"><div class="v">02</div><div class="l">90日报警</div></div>
+                <div class="profile-stat"><div class="v">94%</div><div class="l">实警率</div></div>
+                <div class="profile-stat"><div class="v">A</div><div class="l">风险等级</div></div>
+                <div class="profile-stat"><div class="v">06</div><div class="l">同区域案</div></div>
+              </div>
+            </div>
+            <div class="profile-timeline">
+              <div class="tl-label"><span>近 90 日时间线</span><b>11 条</b></div>
+              <div class="timeline">
+                <div class="tl-item match"><span class="node"></span><div><div class="what"><b>本警情</b> · 落客区两车碰撞，疑似轻伤</div><div class="when">14:20 · 现场</div></div></div>
+                <div class="tl-item"><span class="node"></span><div><div class="what">同区域 <b>车辆剐蹭</b> 协查记录</div><div class="when">05-29 09:14</div></div></div>
+                <div class="tl-item warn"><span class="node"></span><div><div class="what">电话回访 · 提醒 <b>高峰期绕行</b></div><div class="when">05-22 18:02</div></div></div>
+                <div class="tl-item"><span class="node"></span><div><div class="what">广场活动 <b>咨询</b> · 已答复</div><div class="when">05-10 11:38</div></div></div>
+                <div class="tl-item"><span class="node"></span><div><div class="what">同区域 <b>路面结冰</b> 上报</div><div class="when">04-30 07:21</div></div></div>
+              </div>
+            </div>
+          </div>`
+        },
+        resource: {
+          title: "周边警力",
+          sub: "3 单位 · 1.2km 半径",
+          icon: '<svg viewBox="0 0 24 24"><circle cx="9" cy="16" r="2" /><circle cx="17" cy="18" r="2" /><path d="M3 12h2l2-5h9l3 5h2" /></svg>',
+          body: `<div class="resource-body">
+            <div class="res-col">
+              <div class="res-head">
+                <div class="res-id"><div class="res-glyph green"><svg viewBox="0 0 24 24"><path d="M7 22a3 3 0 1 0 0-6 3 3 0 0 0 0 6z" /><path d="M17 22a3 3 0 1 0 0-6 3 3 0 0 0 0 6z" /><path d="M5 16V8h7l2 4h5v4" /></svg></div><div><div class="res-name">巡组 01</div><div class="res-sub">2 人 · 徒步</div></div></div>
+                <span class="res-status ok">在岗</span>
+              </div>
+              <div class="res-body-row">
+                <div class="res-ring"><svg viewBox="0 0 56 56"><circle class="ring-bg" cx="28" cy="28" r="22" /><circle class="ring-fg" cx="28" cy="28" r="22" stroke-dasharray="138" stroke-dashoffset="14" /></svg><div class="ring-val">90<span class="u">%</span></div></div>
+                <div class="res-info"><div class="k">距离 · ETA</div><div class="v">0.4<span class="u">km</span><span style="color:var(--faint);font-size:10px;margin:0 2px">/</span>1<span class="u">m12s</span></div></div>
+                <div class="res-compass" style="--rot:145deg"><span class="dir">SE</span></div>
+              </div>
+              <div class="res-bar"><i style="width:90%"></i></div>
+              <div class="res-bar-label"><span>备勤等级</span><b>L3</b></div>
+            </div>
+            <div class="res-col">
+              <div class="res-head">
+                <div class="res-id"><div class="res-glyph amber"><svg viewBox="0 0 24 24"><path d="M5 17h14l-1.5-9H6.5z" /><circle cx="8" cy="19" r="1.5" /><circle cx="16" cy="19" r="1.5" /><path d="M3 12h18" /></svg></div><div><div class="res-name">警车 A7</div><div class="res-sub">川A·K8801</div></div></div>
+                <span class="res-status amber">出警</span>
+              </div>
+              <div class="res-body-row">
+                <div class="res-ring amber"><svg viewBox="0 0 56 56"><circle class="ring-bg" cx="28" cy="28" r="22" /><circle class="ring-fg" cx="28" cy="28" r="22" stroke-dasharray="138" stroke-dashoffset="44" /></svg><div class="ring-val">68<span class="u">%</span></div></div>
+                <div class="res-info"><div class="k">距离 · ETA</div><div class="v">1.2<span class="u">km</span><span style="color:var(--faint);font-size:10px;margin:0 2px">/</span>3<span class="u">m32s</span></div></div>
+                <div class="res-compass" style="--rot:220deg"><span class="dir">SW</span></div>
+              </div>
+              <div class="res-bar amber"><i style="width:68%"></i></div>
+              <div class="res-bar-label"><span>备勤等级</span><b>L2</b></div>
+            </div>
+            <div class="res-col">
+              <div class="res-head">
+                <div class="res-id"><div class="res-glyph blue"><svg viewBox="0 0 24 24"><circle cx="6" cy="17" r="3" /><circle cx="18" cy="17" r="3" /><path d="M6 14l3-7h6l3 7" /><path d="M12 7l-1-2" /></svg></div><div><div class="res-name">铁骑 03</div><div class="res-sub">1 人 · 摩托</div></div></div>
+                <span class="res-status blue">可调</span>
+              </div>
+              <div class="res-body-row">
+                <div class="res-ring blue"><svg viewBox="0 0 56 56"><circle class="ring-bg" cx="28" cy="28" r="22" /><circle class="ring-fg" cx="28" cy="28" r="22" stroke-dasharray="138" stroke-dashoffset="78" /></svg><div class="ring-val">44<span class="u">%</span></div></div>
+                <div class="res-info"><div class="k">距离 · ETA</div><div class="v">2.5<span class="u">km</span><span style="color:var(--faint);font-size:10px;margin:0 2px">/</span>6<span class="u">m48s</span></div></div>
+                <div class="res-compass" style="--rot:45deg"><span class="dir">NE</span></div>
+              </div>
+              <div class="res-bar blue"><i style="width:44%"></i></div>
+              <div class="res-bar-label"><span>备勤等级</span><b>L1</b></div>
+            </div>
+          </div>`
+        }
+      };
+
+      const byId = (id) => document.getElementById(id);
+      const workspace = byId("workspace");
+      const app = byId("app");
+      const planMatchStatus = "matched";
+      const restartedTaskIds = ["task_query_disposal_plan", "task_open_police_resources_panel", "task_play_dispatch_bwc"];
+      let selectedTask = "task_lookup_address_by_incident_address";
+      let selectedMode = "collab";
+      let selectedQueue = "q1";
+      let selectedHistory = "h1";
+      let activeIncident = queueItems[0];
+      let sideDragStart = null;
+      let sideDragActive = false;
+      const manualMessages = [];
+      const closedCards = new Set();
+      let maximizedCard = null;
+
+      function taskGlyph(status) {
+        if (status === "done") return "✓";
+        if (status === "failed") return "×";
+        if (status === "processing") return "◌";
+        if (status === "stopped") return "–";
+        return "";
+      }
+      function taskStatusLabel(status) {
+        if (status === "done") return "已完成";
+        if (status === "failed") return "失败";
+        if (status === "processing") return "执行中";
+        if (status === "stopped") return "已停止";
+        return "等待";
+      }
+      function allTasks() { return taskSteps.flatMap((step) => step.tasks); }
+      function availableCards() { return new Set(allTasks().filter((task) => task.status === "done" && task.card).map((task) => task.card)); }
+      function cardTask(cardKey) { return allTasks().find((task) => task.card === cardKey); }
+      function syncCardSelection(task = allTasks().find((item) => item.id === selectedTask)) {
+        document.querySelectorAll("[data-card]").forEach((card) => card.classList.toggle("selected", Boolean(task && card.dataset.card === task.card)));
+      }
+      function scrollCardIntoView(cardKey) {
+        const card = document.querySelector(`[data-card="${cardKey}"]`);
+        if (card) card.scrollIntoView({ block: "nearest", inline: "nearest" });
+      }
+      function openCard(cardKey, taskId) {
+        const currentCards = availableCards();
+        if (!currentCards.has(cardKey)) return;
+        closedCards.delete(cardKey);
+        if (taskId) selectedTask = taskId;
+        else {
+          const matchedTask = cardTask(cardKey);
+          if (matchedTask) selectedTask = matchedTask.id;
+        }
+        renderCards();
+        renderFlow();
+        syncCardSelection();
+        scrollCardIntoView(cardKey);
+      }
+      function closeCard(cardKey) {
+        if (!cardKey) return;
+        closedCards.add(cardKey);
+        if (maximizedCard === cardKey) maximizedCard = null;
+        renderCards();
+        renderFlow();
+      }
+      function toggleMaximizedCard(cardKey) {
+        const currentCards = availableCards();
+        if (!currentCards.has(cardKey) || closedCards.has(cardKey)) return;
+        maximizedCard = maximizedCard === cardKey ? null : cardKey;
+        renderCards();
+        scrollCardIntoView(cardKey);
+      }
+
+      function renderCards() {
+        const currentCards = availableCards();
+        closedCards.forEach((cardKey) => {
+          if (!currentCards.has(cardKey)) closedCards.delete(cardKey);
+        });
+        if (maximizedCard && (!currentCards.has(maximizedCard) || closedCards.has(maximizedCard))) maximizedCard = null;
+        const selectedCard = allTasks().find((task) => task.id === selectedTask)?.card;
+        const visibleCards = Object.entries(CARD_DEFS).filter(([key]) => currentCards.has(key) && !closedCards.has(key));
+        const cardsToRender = maximizedCard ? visibleCards.filter(([key]) => key === maximizedCard) : visibleCards;
+        byId("cardGrid").classList.toggle("has-maximized", Boolean(maximizedCard));
+        byId("cardGrid").innerHTML = cardsToRender.map(([key, def]) => `
+          <article class="business-card ${selectedCard === key ? "selected" : ""} ${maximizedCard === key ? "maximized" : ""}" data-card="${key}" tabindex="0">
+            <div class="card-corner"></div>
+            <div class="card-top">
+              <h3><span class="ic">${def.icon}</span>${def.title}<span class="sub">${def.sub}</span></h3>
+              <div class="card-actions">
+                <button class="mini-btn" type="button" data-card-collapse="${key}" aria-label="收起" title="收起"><svg viewBox="0 0 24 24"><path d="m18 15-6-6-6 6" /></svg></button>
+                <button class="mini-btn" type="button" data-card-maximize="${key}" aria-label="${maximizedCard === key ? "还原" : "最大化"}" title="${maximizedCard === key ? "还原" : "最大化"}">${maximizedCard === key ? `<svg viewBox="0 0 24 24"><path d="M9 5H5v4" /><path d="M15 5h4v4" /><path d="M9 19H5v-4" /><path d="M15 19h4v-4" /></svg>` : `<svg viewBox="0 0 24 24"><path d="M8 3H5a2 2 0 0 0-2 2v3" /><path d="M16 3h3a2 2 0 0 1 2 2v3" /><path d="M8 21H5a2 2 0 0 1-2-2v-3" /><path d="M16 21h3a2 2 0 0 0 2-2v-3" /></svg>`}</button>
+                <button class="mini-btn" type="button" data-card-close="${key}" aria-label="关闭卡片" title="关闭卡片"><svg viewBox="0 0 24 24"><path d="M6 6l12 12" /><path d="M18 6 6 18" /></svg></button>
+              </div>
+            </div>
+            <div class="card-body">${def.body}</div>
+          </article>`).join("");
+      }
+
+      function renderFlow() {
+        const currentCards = availableCards();
+        const selectedCard = allTasks().find((task) => task.id === selectedTask)?.card;
+        const steps = planMatchStatus === "matched" ? taskSteps.map((step) => {
+          const done = step.tasks.filter((task) => task.status === "done").length;
+          const stopped = step.tasks.filter((task) => task.status === "stopped").length;
+          const resumeBar = stopped ? `<div class="resume-bar"><span class="resume-copy"><strong>${stopped} 项已停止</strong><span>恢复后沿用当前警情上下文，不重置已完成结果。</span></span><button class="restart-btn" type="button" data-restart-step="${step.id}">重新开始</button></div>` : "";
+          return `<section class="step"><div class="step-title"><span>${step.title}</span><span class="count"><span class="d">${done}</span>/${step.tasks.length}</span></div>${resumeBar}${step.tasks.map((task) => {
+            const canOpenCard = Boolean(task.card && currentCards.has(task.card));
+            const cardTitle = task.card && CARD_DEFS[task.card] ? CARD_DEFS[task.card].title : task.title;
+            const actions = [];
+            if (canOpenCard) {
+              actions.push(`<button class="task-icon-btn ${selectedCard === task.card && !closedCards.has(task.card) ? "active" : ""}" type="button" data-card-open="${task.card}" data-card-task="${task.id}" aria-label="打开卡片：${cardTitle}" title="打开卡片"><svg viewBox="0 0 24 24"><rect x="4" y="5" width="12" height="12" rx="2" /><path d="M14 10h6" /><path d="M17 7l3 3-3 3" /></svg></button>`);
+            }
+            if (task.status === "failed") {
+              actions.push(`<button class="retry-btn" type="button" data-retry="${task.id}">重试</button>`);
+            }
+            if (task.status === "stopped") {
+              actions.push(`<button class="restart-btn" type="button" data-restart="${task.id}">重新开始</button>`);
+            }
+            return `
+            <div class="task-row ${task.status} ${task.id === selectedTask ? "selected" : ""}" role="button" tabindex="0" data-task="${task.id}" aria-label="${task.title}，${taskStatusLabel(task.status)}">
+              <span class="glyph">${taskGlyph(task.status)}</span>
+              <span class="status-text">${taskStatusLabel(task.status)}</span>
+              <span class="task-copy"><strong>${task.title}</strong><span>${task.note}</span></span>
+              ${actions.length ? `<span class="task-actions">${actions.join("")}</span>` : ""}
+            </div>
+            ${task.status === "failed" ? `<div class="fail-note">${task.fail}</div>` : ""}
+            ${task.status === "stopped" ? `<div class="resume-note">该任务由用户手动停止，可单独恢复或按阶段批量重新开始。</div>` : ""}`;
+          }).join("")}</section>`;
+        }).join("") : "";
+
+        const manualBlocks = manualMessages.map((message) => {
+          const isSystem = message.actor === "system";
+          return `
+          <div class="flow-block">
+            <div class="avatar ${isSystem ? "system" : "user"}">${isSystem ? "系" : "我"}</div>
+            <div class="bubble">
+              <div class="bubble-head"><strong>${isSystem ? "恢复任务" : "用户指令"}</strong><span>${message.time}</span></div>
+              <p>${message.text}</p>
+            </div>
+          </div>`;
+        }).join("");
+
+        byId("flowList").innerHTML = `
+          <div class="flow-block"><div class="avatar system">系</div><div class="bubble"><div class="bubble-head"><strong>警情消息通知</strong><span>14:20</span></div><p>指挥长张三开始处置：${activeIncident.title}。${activeIncident.summary}</p></div></div>
+          <div class="flow-block"><div class="avatar system">系</div><div class="bubble"><div class="bubble-head"><strong>根据警情匹配预案指引</strong><span>14:20</span></div><p>${planMatchStatus === "matched" ? "已匹配交通事故先期处置预案，生成后续处置步骤。" : "暂未匹配到预案。"}</p></div></div>
+          ${planMatchStatus === "matched" ? `<div class="flow-block"><div class="avatar system">系</div><div class="bubble ${selectedTask ? "selected" : ""}"><div class="bubble-head"><strong>处置动态</strong><span>14:21</span></div>${steps}</div></div>` : ""}
+          <div class="flow-block"><div class="avatar user">我</div><div class="bubble"><div class="bubble-head"><strong>用户指令</strong><span>14:33</span></div><p>帮我查下神舟路地铁周边监控。</p></div></div>
+          <div class="flow-block"><div class="avatar system">系</div><div class="bubble"><div class="bubble-head"><strong>协查响应</strong><span>14:34</span></div><p>已开始调取神舟路地铁站 B 口、C 口和公交站周边监控资源。</p></div></div>
+          ${manualBlocks}`;
+      }
+
+      function renderQueue() {
+        byId("queueList").innerHTML = queueItems.map((item) => `
+          <section class="queue-card ${item.state} ${item.id === selectedQueue ? "selected" : ""}" data-queue="${item.id}">
+            <span class="status-bar"></span>
+            <span class="list-copy"><strong>${item.status} · ${item.title}</strong><p>${item.id === selectedQueue ? item.full : item.summary}</p><span class="list-meta">${item.meta.map((m) => `<span>${m}</span>`).join("")}</span></span>
+            <button class="action-btn" type="button" data-queue-action="${item.id}">${item.action}</button>
+          </section>`).join("");
+        byId("queueList").querySelectorAll("[data-queue-action]").forEach((button) => {
+          button.addEventListener("click", (event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            handleQueueAction(button.dataset.queueAction);
+          });
+        });
+      }
+
+      function renderHistory() {
+        byId("historyList").innerHTML = historyItems.map((item) => `
+          <button class="history-card ${item.id === selectedHistory ? "selected" : ""}" type="button" data-history="${item.id}">
+            <span class="status-bar"></span>
+            <span class="list-copy"><strong>${item.commander} · ${item.title}</strong><p>${item.id === selectedHistory ? item.full : item.summary}</p><span class="list-meta">${item.meta.map((m) => `<span>${m}</span>`).join("")}</span></span>
+            <span class="action-btn">处置回放</span>
+          </button>`).join("");
+      }
+
+      function clearDockContext() { byId("commandDock").classList.remove("has-context"); byId("dockContext").textContent = ""; }
+      function setDockOpen(isOpen, context = "") {
+        const dock = byId("commandDock");
+        const railCommand = byId("railCommand");
+        dock.classList.toggle("show", isOpen);
+        dock.setAttribute("aria-hidden", isOpen ? "false" : "true");
+        railCommand.classList.toggle("active", isOpen);
+        railCommand.setAttribute("aria-pressed", isOpen ? "true" : "false");
+        if (!isOpen) {
+          clearDockContext();
+          return;
+        }
+        clearDockContext();
+        if (context) {
+          byId("dockContext").textContent = context;
+          dock.classList.add("has-context");
+        }
+        byId("commandInput").focus();
+      }
+      function toggleDock(context = "") {
+        if (app.classList.contains("readonly")) return;
+        const dock = byId("commandDock");
+        setDockOpen(!dock.classList.contains("show"), context);
+      }
+      function showDock(context) {
+        if (app.classList.contains("readonly")) return;
+        setDockOpen(true, context);
+      }
+      function selectTask(id, openDock) {
+        selectedTask = id;
+        const task = allTasks().find((item) => item.id === id);
+        syncCardSelection(task);
+        renderFlow();
+        if (task?.status === "failed") { showDock(`引用：${task.title} · 失败`); }
+        else if (task?.status === "stopped") { showDock(`引用：${task.title} · 已停止`); }
+        else if (openDock) { showDock(task?.title || ""); }
+      }
+      function restartTasks(ids) {
+        const targets = allTasks().filter((task) => ids.includes(task.id) && task.status === "stopped");
+        if (!targets.length) return;
+        targets.forEach((task) => {
+          task.status = "processing";
+          task.note = "重新开始 · 正在恢复上下文";
+          task.stopped = false;
+        });
+        selectedTask = targets[0].id;
+        manualMessages.push({
+          text: `刚刚停止的 ${targets.length} 个任务已重新开始：${targets.map((task) => task.title).join("、")}。`,
+          time: new Date().toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit", hour12: false }),
+          actor: "system"
+        });
+        renderCards();
+        renderFlow();
+        window.setTimeout(() => completeRestartedTasks(targets.map((task) => task.id)), 900);
+      }
+      function completeRestartedTasks(ids) {
+        allTasks().filter((task) => ids.includes(task.id)).forEach((task) => {
+          task.status = "done";
+          task.note = task.card ? "恢复完成 · 结果已更新" : "恢复完成 · 设备画面已接入";
+        });
+        renderCards();
+        renderFlow();
+      }
+      function setActiveIncident(item) {
+        activeIncident = item;
+        selectedQueue = item.id;
+        app.classList.add("accepted");
+        byId("eventCard").classList.remove("show");
+        byId("eventCard").setAttribute("aria-hidden", "true");
+        byId("eventCard").hidden = true;
+        item.state = "active";
+        item.status = "指挥长张三处置中";
+        item.action = "协同处置";
+        openSide("collab");
+        renderQueue();
+        renderFlow();
+      }
+      function handleQueueAction(id) { const item = queueItems.find((entry) => entry.id === id); if (item) setActiveIncident(item); }
+      function openSide(mode) {
+        selectedMode = mode;
+        workspace.classList.remove("side-collapsed");
+        byId("sidePanel").setAttribute("aria-hidden", "false");
+        app.classList.toggle("readonly", mode === "history");
+        document.querySelectorAll(".rail-btn[data-mode]").forEach((btn) => btn.classList.toggle("active", btn.dataset.mode === mode));
+        document.querySelectorAll(".panel").forEach((panel) => panel.classList.remove("active"));
+        byId(`${mode}Panel`).classList.add("active");
+        byId("sideTitle").textContent = mode === "collab" ? "协作" : mode === "queue" ? "待办" : "历史";
+        if (mode === "collab") { renderFlow(); return; }
+        if (mode === "history") setDockOpen(false);
+        clearDockContext();
+        if (mode === "queue") { renderQueue(); return; }
+        renderHistory();
+      }
+      function acceptEvent() { setActiveIncident(queueItems[0]); selectTask("task_lookup_address_by_incident_address"); }
+      function declineEvent() {
+        byId("eventCard").classList.remove("show");
+        byId("eventCard").setAttribute("aria-hidden", "true");
+        byId("eventCard").hidden = true;
+        selectedQueue = "q4";
+        openSide("queue");
+      }
+
+      renderCards();
+      renderFlow();
+      renderQueue();
+      renderHistory();
+
+      document.addEventListener("click", (event) => {
+        const mode = event.target.closest("[data-mode]");
+        if (mode) openSide(mode.dataset.mode);
+        const retry = event.target.closest("[data-retry]");
+        if (retry) {
+          event.preventDefault();
+          event.stopPropagation();
+          const failed = allTasks().find((item) => item.id === retry.dataset.retry);
+          showDock(`引用：${failed.title} · 重试`);
+          return;
+        }
+        const restart = event.target.closest("[data-restart]");
+        if (restart) {
+          event.preventDefault();
+          event.stopPropagation();
+          restartTasks([restart.dataset.restart]);
+          return;
+        }
+        const restartStep = event.target.closest("[data-restart-step]");
+        if (restartStep) {
+          event.preventDefault();
+          event.stopPropagation();
+          const step = taskSteps.find((item) => item.id === restartStep.dataset.restartStep);
+          restartTasks(step ? step.tasks.map((task) => task.id) : []);
+          return;
+        }
+        const openCardButton = event.target.closest("[data-card-open]");
+        if (openCardButton) {
+          event.preventDefault();
+          event.stopPropagation();
+          openCard(openCardButton.dataset.cardOpen, openCardButton.dataset.cardTask);
+          return;
+        }
+        const collapseCardButton = event.target.closest("[data-card-collapse]");
+        if (collapseCardButton) {
+          event.preventDefault();
+          event.stopPropagation();
+          return;
+        }
+        const maximizeCardButton = event.target.closest("[data-card-maximize]");
+        if (maximizeCardButton) {
+          event.preventDefault();
+          event.stopPropagation();
+          toggleMaximizedCard(maximizeCardButton.dataset.cardMaximize);
+          return;
+        }
+        const closeCardButton = event.target.closest("[data-card-close]");
+        if (closeCardButton) {
+          event.preventDefault();
+          event.stopPropagation();
+          closeCard(closeCardButton.dataset.cardClose);
+          return;
+        }
+        const task = event.target.closest("[data-task]");
+        if (task) selectTask(task.dataset.task, true);
+        const card = event.target.closest("[data-card]");
+        if (card) {
+          const matched = cardTask(card.dataset.card);
+          if (matched) selectTask(matched.id, false);
+        }
+        const queueAction = event.target.closest("[data-queue-action]");
+        if (queueAction) { event.preventDefault(); event.stopPropagation(); handleQueueAction(queueAction.dataset.queueAction); return; }
+        const queue = event.target.closest("[data-queue]");
+        if (queue && !event.target.closest("[data-queue-action]")) { selectedQueue = queue.dataset.queue; renderQueue(); }
+        const history = event.target.closest("[data-history]");
+        if (history) { selectedHistory = history.dataset.history; renderHistory(); openSide("history"); }
+      });
+      document.addEventListener("keydown", (event) => {
+        if (event.target.closest("[data-card-open], [data-retry], [data-restart], [data-restart-step], [data-card-collapse], [data-card-maximize], [data-card-close]")) return;
+        const task = event.target.closest("[data-task]");
+        if (task && (event.key === "Enter" || event.key === " ")) {
+          event.preventDefault();
+          selectTask(task.dataset.task, true);
+        }
+      });
+
+      byId("acceptEvent").addEventListener("click", acceptEvent);
+      byId("declineEvent").addEventListener("click", declineEvent);
+      byId("collapseSideBtn").addEventListener("click", () => { workspace.classList.add("side-collapsed"); byId("sidePanel").setAttribute("aria-hidden", "true"); });
+      byId("sideHandle").addEventListener("click", () => openSide(selectedMode));
+      byId("sideHandle").addEventListener("pointerdown", (event) => { sideDragStart = event.clientX; sideDragActive = true; byId("sideHandle").setPointerCapture(event.pointerId); });
+      byId("sideHandle").addEventListener("pointermove", (event) => { if (!sideDragActive) return; workspace.classList.toggle("side-left", event.clientX < window.innerWidth / 2); });
+      byId("sideHandle").addEventListener("pointerup", () => { sideDragStart = null; sideDragActive = false; });
+      byId("sideHandle").addEventListener("pointercancel", () => { sideDragStart = null; sideDragActive = false; });
+      byId("dockSideBtn").addEventListener("click", () => workspace.classList.toggle("side-left"));
+      byId("dockFileTrigger").addEventListener("click", () => byId("dockFileInput").click());
+      byId("railCommand").addEventListener("click", () => toggleDock());
+      byId("railVoice").addEventListener("click", () => { byId("railVoice").classList.toggle("recording"); byId("dockVoice").classList.toggle("recording"); });
+      byId("dockVoice").addEventListener("click", () => { byId("railVoice").classList.toggle("recording"); byId("dockVoice").classList.toggle("recording"); });
+      byId("sideHead").addEventListener("pointerdown", (event) => {
+        if (!event.target.closest("button")) { sideDragStart = event.clientX; sideDragActive = true; byId("sideHead").classList.add("dragging"); byId("sideHead").setPointerCapture(event.pointerId); }
+      });
+      byId("sideHead").addEventListener("pointermove", (event) => { if (!sideDragActive) return; workspace.classList.toggle("side-left", event.clientX < window.innerWidth / 2); });
+      byId("sideHead").addEventListener("pointerup", (event) => {
+        if (sideDragStart !== null && Math.abs(event.clientX - sideDragStart) > 48) { workspace.classList.toggle("side-left", event.clientX < window.innerWidth / 2); }
+        sideDragStart = null; sideDragActive = false; byId("sideHead").classList.remove("dragging");
+      });
+      byId("sideHead").addEventListener("pointercancel", () => { sideDragStart = null; sideDragActive = false; byId("sideHead").classList.remove("dragging"); });
+      byId("commandInput").addEventListener("input", (event) => { event.target.style.height = "auto"; event.target.style.height = `${Math.min(event.target.scrollHeight, 112)}px`; });
+      byId("commandDock").addEventListener("submit", (event) => {
+        event.preventDefault();
+        const input = byId("commandInput");
+        const text = input.value.trim();
+        if (!text) return;
+        manualMessages.push({ text, time: new Date().toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit", hour12: false }) });
+        input.value = ""; input.style.height = "auto";
+        clearDockContext();
+        openSide("collab");
+        if (/重新开始|重启|恢复/.test(text)) restartTasks(restartedTaskIds);
+        renderFlow();
+        byId("flowList").scrollTop = byId("flowList").scrollHeight;
+      });
+    </script>
+  
+
+</body></html>
