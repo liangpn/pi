@@ -1,0 +1,417 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>侧边区域 · 组件示意</title>
+    <style>
+      /* ============================================================
+         第 1 层：词汇表 (Design Tokens)
+         整页所有视觉都从这里取值。想统一改风格，只改这里。
+         ============================================================ */
+      :root {
+        color-scheme: dark;
+
+        /* —— 工作台基调（冷静深色，色阶对比清晰） —— */
+        --bg: #060c15;            /* 最底层背景（工作区，最暗） */
+        --surface-1: #111f31;     /* 抽屉外壳（明显抬升） */
+        --surface-2: #16273c;     /* 内容卡片/行 */
+        --surface-3: #1d3149;     /* 抬升/hover */
+        --line: #2b405c;          /* 常规分隔线 */
+        --line-soft: #213349;     /* 更弱的分隔线 */
+
+        /* —— 文本三档 —— */
+        --text: #eef3f9;
+        --text-soft: #aebacb;
+        --text-muted: #6f8199;
+
+        /* —— 强调色：只服务“选中联动” —— */
+        --accent: #2dd4bf;
+        --accent-bg: rgba(45, 212, 191, 0.12);
+        --accent-line: rgba(45, 212, 191, 0.55);
+
+        /* —— 状态语义色 —— */
+        --st-wait: #7d8ea6;
+        --st-running: #4ea5ff;
+        --st-done: #36c275;
+        --st-fail: #ff5a5f;
+        --st-stopped: #e9a63a;
+
+        /* —— 尺寸刻度 —— */
+        --rail-w: 56px;
+        --side-w: 380px;
+        --topbar-h: 52px;
+        --radius: 10px;
+        --radius-sm: 8px;
+        --icon-btn: 36px;
+
+        --ease: cubic-bezier(0.22, 0.61, 0.36, 1);
+        --dur: 220ms;
+        --shadow: 0 18px 50px rgba(0, 0, 0, 0.5);
+      }
+
+      * { box-sizing: border-box; }
+      html, body { margin: 0; height: 100%; }
+      body {
+        height: 100dvh;
+        overflow: hidden;
+        background: var(--bg);
+        color: var(--text);
+        font-family: "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI",
+          "PingFang SC", "Microsoft YaHei", sans-serif;
+        -webkit-font-smoothing: antialiased;
+      }
+      button { font: inherit; cursor: pointer; color: inherit; }
+      h1, h2, h3, h4, p { margin: 0; }
+
+      /* ============================================================ 骨架 */
+      .app {
+        display: grid;
+        grid-template-columns: var(--rail-w) 1fr;
+        grid-template-rows: var(--topbar-h) minmax(0, 1fr);
+        height: 100dvh;
+      }
+      .app.dock-left { grid-template-columns: var(--rail-w) auto 1fr; }
+
+      .topbar {
+        grid-column: 2 / -1; grid-row: 1;
+        display: flex; align-items: center; justify-content: space-between;
+        height: var(--topbar-h); padding: 0 16px;
+        border-bottom: 1px solid var(--line); background: #08111d;
+      }
+      .brand { display: flex; align-items: center; gap: 10px; }
+      .brand .mark {
+        display: grid; place-items: center; width: 30px; height: 30px;
+        border: 1px solid #2f4f6e; border-radius: var(--radius-sm);
+        background: #0d2033; color: #9fe6db; font-weight: 800; font-size: 13px;
+      }
+      .brand h1 { font-size: 15px; font-weight: 700; letter-spacing: 0.2px; }
+      .lamp { display: inline-flex; align-items: center; gap: 7px; font-size: 12px; color: var(--text-soft); }
+      .lamp::before {
+        content: ""; width: 8px; height: 8px; border-radius: 999px;
+        background: var(--st-running); box-shadow: 0 0 0 3px rgba(78,165,255,0.18);
+      }
+
+      /* ============================================================ 左侧细栏 */
+      .rail {
+        grid-column: 1; grid-row: 1 / -1;
+        display: flex; flex-direction: column; align-items: center; gap: 6px;
+        padding: 10px 0; border-right: 1px solid var(--line); background: #08111d; z-index: 40;
+      }
+      .rail-mark {
+        display: grid; place-items: center; width: 34px; height: 34px; margin-bottom: 8px;
+        border-radius: var(--radius-sm); background: #0d2033; color: #9fe6db;
+        font-weight: 800; font-size: 13px; border: 1px solid #2f4f6e;
+      }
+      .rail-btn {
+        position: relative; display: grid; place-items: center; width: 40px; height: 40px;
+        border: 1px solid transparent; border-radius: var(--radius-sm);
+        background: transparent; color: var(--text-muted);
+        transition: background var(--dur) var(--ease), color var(--dur) var(--ease), border-color var(--dur) var(--ease);
+      }
+      .rail-btn:hover { background: var(--surface-2); color: var(--text-soft); }
+      .rail-btn svg { width: 20px; height: 20px; }
+      .rail-btn.active { background: var(--surface-3); color: var(--accent); border-color: rgba(45,212,191,0.25); }
+      .rail-btn.active::before {
+        content: ""; position: absolute; left: -1px; top: 8px; bottom: 8px;
+        width: 3px; border-radius: 0 3px 3px 0; background: var(--accent);
+      }
+      .rail-btn.recording { color: var(--st-fail); }
+      .rail-btn.recording::after {
+        content: ""; position: absolute; inset: 4px; border-radius: var(--radius-sm);
+        border: 2px solid var(--st-fail); opacity: 0; animation: pulse 1.4s var(--ease) infinite;
+      }
+      @keyframes pulse { 0% { transform: scale(0.85); opacity: 0.7; } 100% { transform: scale(1.25); opacity: 0; } }
+      .rail-spacer { flex: 1; }
+      .rail-btn[data-tip]:hover::after {
+        content: attr(data-tip); position: absolute; left: calc(100% + 10px); top: 50%;
+        transform: translateY(-50%); padding: 5px 9px; border-radius: 6px;
+        background: #050d18; border: 1px solid var(--line); color: var(--text);
+        font-size: 12px; white-space: nowrap; box-shadow: var(--shadow); z-index: 60;
+      }
+
+      /* ============================================================ 工作区占位 */
+      .workspace {
+        grid-column: 2 / -1; grid-row: 2; position: relative;
+        display: grid; place-items: center; padding: 24px;
+        color: var(--text-muted); background: #050a12;
+      }
+      .app.dock-left .workspace { grid-column: 3; }
+      .hint { max-width: 360px; text-align: center; line-height: 1.8; font-size: 13px; }
+      .hint b { color: var(--text-soft); font-weight: 600; }
+
+      /* ============================================================ 侧边区域外壳 */
+      .drawer {
+        grid-row: 2; display: grid; grid-template-rows: auto minmax(0, 1fr);
+        width: var(--side-w); min-height: 0; background: var(--surface-1);
+        transition: transform var(--dur) var(--ease);
+      }
+      .app:not(.dock-left) .drawer { grid-column: 2 / -1; justify-self: end; border-left: 1px solid var(--line); box-shadow: var(--shadow); }
+      .app.dock-left .drawer { grid-column: 2; border-right: 1px solid var(--line); box-shadow: var(--shadow); }
+      .app.collapsed .drawer { display: none; }
+
+      .drawer-head {
+        display: flex; align-items: center; gap: 8px; height: 46px; padding: 0 8px 0 12px;
+        border-bottom: 1px solid var(--line); background: var(--surface-2);
+        cursor: grab; user-select: none;
+      }
+      .drawer-head.dragging { cursor: grabbing; background: var(--surface-3); }
+      .drawer-grip { display: flex; flex-direction: column; gap: 2px; opacity: 0.5; }
+      .drawer-grip span { width: 12px; height: 2px; border-radius: 2px; background: var(--text-muted); }
+      .drawer-title { flex: 1; font-size: 13px; font-weight: 700; letter-spacing: 0.3px; }
+      .icon-btn {
+        display: grid; place-items: center; width: var(--icon-btn); height: var(--icon-btn);
+        border: 1px solid var(--line); border-radius: var(--radius-sm);
+        background: var(--surface-2); color: var(--text-soft);
+        transition: background var(--dur) var(--ease), border-color var(--dur) var(--ease);
+      }
+      .icon-btn:hover { background: var(--surface-3); border-color: #3a5575; }
+      .icon-btn svg { width: 16px; height: 16px; }
+
+      .drawer-body { min-height: 0; overflow: auto; scrollbar-width: none; }
+      .drawer-body::-webkit-scrollbar { display: none; }
+
+      .handle {
+        position: fixed; top: calc(var(--topbar-h) + 18px); z-index: 35; display: none;
+        align-items: center; padding: 10px 6px; border: 1px solid var(--line);
+        border-radius: var(--radius-sm); background: rgba(17,31,49,0.95); color: var(--accent);
+        box-shadow: var(--shadow); writing-mode: vertical-rl; font-size: 12px; font-weight: 700; letter-spacing: 2px;
+      }
+      .handle:hover { border-color: var(--accent-line); }
+      .app.collapsed .handle { display: inline-flex; }
+      .app:not(.dock-left) .handle { right: 12px; }
+      .app.dock-left .handle { left: calc(var(--rail-w) + 12px); }
+
+      /* ============================================================ 内容块 */
+      .panel { display: none; padding: 12px; }
+      .panel.active { display: block; }
+
+      .flow-step { margin-bottom: 14px; }
+      .step-label { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; padding-left: 2px; color: var(--text-soft); font-size: 12px; font-weight: 700; }
+      .step-label .dot { width: 6px; height: 6px; border-radius: 999px; background: var(--accent); }
+
+      .task {
+        display: grid; grid-template-columns: 22px 1fr auto; gap: 10px; align-items: center;
+        padding: 10px; border: 1px solid var(--line-soft); border-radius: var(--radius-sm);
+        background: var(--surface-2); margin-bottom: 8px; cursor: pointer;
+        transition: border-color var(--dur) var(--ease), background var(--dur) var(--ease);
+      }
+      .task:hover { border-color: #34507080; }
+      .task.selected { border-color: var(--accent-line); background: var(--accent-bg); }
+      .task.selected .task-title { color: var(--text); }
+
+      .node { width: 18px; height: 18px; border-radius: 999px; display: grid; place-items: center; border: 2px solid var(--st-wait); }
+      .node svg { width: 11px; height: 11px; }
+      .task[data-state="wait"] { opacity: 0.7; }
+      .task[data-state="running"] .node { border-color: var(--st-running); border-top-color: transparent; animation: spin 0.9s linear infinite; }
+      @keyframes spin { to { transform: rotate(360deg); } }
+      .task[data-state="done"] .node { border-color: var(--st-done); background: rgba(54,194,117,0.15); color: var(--st-done); }
+      .task[data-state="fail"] .node { border-color: var(--st-fail); background: rgba(255,90,95,0.15); color: var(--st-fail); }
+
+      .task-title { font-size: 13px; color: var(--text-soft); line-height: 1.35; }
+      .task-act { display: grid; place-items: center; width: 30px; height: 30px; border: 1px solid var(--line); border-radius: 7px; background: var(--surface-1); color: var(--text-soft); }
+      .task-act:hover { border-color: var(--accent-line); color: var(--accent); }
+      .task-act svg { width: 15px; height: 15px; }
+
+      .fail-detail { grid-column: 1 / -1; margin-top: 4px; padding: 8px 10px; border-radius: 7px; background: rgba(255,90,95,0.08); border: 1px solid rgba(255,90,95,0.25); color: #ffb9bb; font-size: 12px; line-height: 1.5; }
+      .retry-btn { margin-top: 8px; padding: 5px 10px; border-radius: 6px; border: 1px solid rgba(255,90,95,0.4); background: rgba(255,90,95,0.12); color: #ffd2d3; font-size: 12px; font-weight: 600; }
+      .retry-btn:hover { background: rgba(255,90,95,0.2); }
+
+      .todo { position: relative; padding: 12px 12px 12px 16px; border: 1px solid var(--line-soft); border-radius: var(--radius-sm); background: var(--surface-2); margin-bottom: 10px; }
+      .todo::before { content: ""; position: absolute; left: 0; top: 10px; bottom: 10px; width: 3px; border-radius: 0 3px 3px 0; }
+      .todo[data-state="active"]::before { background: var(--st-running); }
+      .todo[data-state="active"] { border-color: #2f4f6e; }
+      .todo[data-state="waiting"]::before { background: var(--st-wait); }
+      .todo[data-state="dropped"] { opacity: 0.55; }
+      .todo[data-state="dropped"]::before { background: var(--text-muted); }
+      .todo-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+      .todo-title { font-size: 13px; font-weight: 600; color: var(--text); }
+      .todo-time { font-size: 11px; color: var(--text-muted); white-space: nowrap; }
+      .todo-sum { margin-top: 6px; font-size: 12px; color: var(--text-soft); line-height: 1.5; }
+      .todo-foot { display: flex; align-items: center; justify-content: space-between; margin-top: 10px; }
+      .todo-state-text { font-size: 11px; color: var(--text-muted); }
+      .todo-action { padding: 5px 12px; border-radius: 6px; font-size: 12px; font-weight: 600; border: 1px solid var(--line); background: var(--surface-3); color: var(--text-soft); }
+      .todo[data-state="active"] .todo-action { border-color: var(--accent-line); background: var(--accent-bg); color: var(--accent); }
+
+      .hist { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 11px 12px; border: 1px solid var(--line-soft); border-radius: var(--radius-sm); background: rgba(22,39,60,0.5); margin-bottom: 8px; }
+      .hist-title { font-size: 13px; color: var(--text-soft); }
+      .hist-sub { margin-top: 3px; font-size: 11px; color: var(--text-muted); }
+      .hist-replay { display: inline-flex; align-items: center; gap: 5px; padding: 5px 10px; border-radius: 6px; border: 1px solid var(--line); background: transparent; color: var(--text-muted); font-size: 12px; white-space: nowrap; }
+      .hist-replay:hover { color: var(--text-soft); border-color: #3a5575; }
+      .hist-replay svg { width: 13px; height: 13px; }
+    </style>
+  </head>
+  <body>
+    <div class="app dock-right" id="app">
+      <nav class="rail" aria-label="模式入口">
+        <div class="rail-mark" aria-hidden="true">警</div>
+        <button class="rail-btn" data-mode="collab" data-tip="协作" aria-label="协作">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+        </button>
+        <button class="rail-btn" data-mode="todo" data-tip="待办" aria-label="待办">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
+        </button>
+        <button class="rail-btn" data-mode="history" data-tip="历史" aria-label="历史">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v5h5"/><path d="M3.05 13A9 9 0 1 0 6 5.3L3 8"/><path d="M12 7v5l4 2"/></svg>
+        </button>
+        <div class="rail-spacer"></div>
+        <button class="rail-btn" id="voiceBtn" data-tip="语音输入" aria-label="语音输入">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/></svg>
+        </button>
+        <button class="rail-btn" data-tip="指令输入" aria-label="指令输入">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg>
+        </button>
+      </nav>
+
+      <header class="topbar">
+        <div class="brand">
+          <div class="mark" aria-hidden="true">警</div>
+          <h1>警情处置控制台</h1>
+        </div>
+        <span class="lamp">处置中</span>
+      </header>
+
+      <main class="workspace">
+        <p class="hint">
+          这是<b>业务卡片工作区</b>占位。<br />
+          点击左侧细栏的<b>协作 / 待办 / 历史</b>图标，<br />
+          侧边区域会整体替换内容。<br />
+          顶部条可<b>拖拽</b>切换左右吸附，右上角可<b>收起</b>。
+        </p>
+      </main>
+
+      <aside class="drawer" id="drawer" aria-label="侧边区域">
+        <div class="drawer-head" id="drawerHead">
+          <span class="drawer-grip" aria-hidden="true"><span></span><span></span><span></span></span>
+          <span class="drawer-title" id="drawerTitle">协作</span>
+          <button class="icon-btn" id="collapseBtn" aria-label="收起侧边区域" title="收起">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
+          </button>
+        </div>
+        <div class="drawer-body">
+          <section class="panel active" data-panel="collab">
+            <div class="flow-step">
+              <div class="step-label"><span class="dot"></span>警情要素识别</div>
+              <div class="task" data-state="done" tabindex="0">
+                <span class="node" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg></span>
+                <div><div class="task-title">提取报警要素与事发地址</div></div>
+                <button class="task-act" aria-label="打开卡片：事发地址定位" title="打开卡片：事发地址定位">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M9 3v18"/></svg>
+                </button>
+              </div>
+            </div>
+            <div class="flow-step">
+              <div class="step-label"><span class="dot"></span>根据警情匹配预案指引</div>
+              <div class="task" data-state="done" tabindex="0">
+                <span class="node" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg></span>
+                <div><div class="task-title">命中「街面突发警情」处置预案</div></div>
+                <span></span>
+              </div>
+            </div>
+            <div class="flow-step">
+              <div class="step-label"><span class="dot"></span>现场态势展开</div>
+              <div class="task" data-state="done" tabindex="0">
+                <span class="node" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg></span>
+                <div><div class="task-title">调取周边监控并研判</div></div>
+                <button class="task-act" aria-label="打开卡片：周边监控" title="打开卡片：周边监控">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M9 3v18"/></svg>
+                </button>
+              </div>
+              <div class="task" data-state="running" tabindex="0">
+                <span class="node" aria-hidden="true"></span>
+                <div><div class="task-title">报警人背景关联分析</div></div>
+                <span></span>
+              </div>
+            </div>
+            <div class="flow-step">
+              <div class="step-label"><span class="dot"></span>出警资源可视化</div>
+              <div class="task" data-state="fail" tabindex="0">
+                <span class="node" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></span>
+                <div><div class="task-title">跟踪出警警车实时位置</div></div>
+                <span></span>
+                <div class="fail-detail">
+                  警车 GPS 信号超时未回传，定位失败。
+                  <div><button class="retry-btn">引用此任务并重试</button></div>
+                </div>
+              </div>
+              <div class="task" data-state="wait" tabindex="0">
+                <span class="node" aria-hidden="true"></span>
+                <div><div class="task-title">生成周边警力调度建议</div></div>
+                <span></span>
+              </div>
+            </div>
+          </section>
+
+          <section class="panel" data-panel="todo">
+            <div class="todo" data-state="active">
+              <div class="todo-head"><span class="todo-title">中山路商铺纠纷警情</span><span class="todo-time">12:08</span></div>
+              <p class="todo-sum">报警人称与隔壁商户发生肢体冲突，现场有人受伤，请求出警。</p>
+              <div class="todo-foot"><span class="todo-state-text">指挥长 李建国 处置中</span><button class="todo-action">协同处置</button></div>
+            </div>
+            <div class="todo" data-state="waiting">
+              <div class="todo-head"><span class="todo-title">解放南路车辆剐蹭纠纷</span><span class="todo-time">12:15</span></div>
+              <p class="todo-sum">两车剐蹭后当事人争执，占用机动车道，影响通行。</p>
+              <div class="todo-foot"><span class="todo-state-text">等待处置</span><button class="todo-action">处置</button></div>
+            </div>
+            <div class="todo" data-state="dropped">
+              <div class="todo-head"><span class="todo-title">滨江公园噪音投诉</span><span class="todo-time">11:42</span></div>
+              <p class="todo-sum">群众反映广场舞噪音过大，已交由社区协调，暂不处置。</p>
+              <div class="todo-foot"><span class="todo-state-text">已不处置</span><button class="todo-action">处置</button></div>
+            </div>
+          </section>
+
+          <section class="panel" data-panel="history">
+            <div class="hist">
+              <div class="hist-main"><div class="hist-title">人民广场聚众警情</div><div class="hist-sub">李建国 · 已处置 · 昨日 21:30</div></div>
+              <button class="hist-replay"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="5 3 19 12 5 21 5 3"/></svg>处置回放</button>
+            </div>
+            <div class="hist">
+              <div class="hist-main"><div class="hist-title">火车站盗窃警情</div><div class="hist-sub">王伟 · 已处置 · 昨日 18:05</div></div>
+              <button class="hist-replay"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="5 3 19 12 5 21 5 3"/></svg>处置回放</button>
+            </div>
+          </section>
+        </div>
+      </aside>
+
+      <button class="handle" id="handle" aria-label="展开侧边区域">协作</button>
+    </div>
+
+    <script>
+      const app = document.getElementById("app");
+      const title = document.getElementById("drawerTitle");
+      const handle = document.getElementById("handle");
+      const TITLES = { collab: "协作", todo: "待办", history: "历史" };
+
+      function showMode(mode) {
+        app.classList.remove("collapsed");
+        title.textContent = TITLES[mode];
+        handle.textContent = TITLES[mode];
+        document.querySelectorAll(".panel").forEach((p) => p.classList.toggle("active", p.dataset.panel === mode));
+        document.querySelectorAll(".rail-btn[data-mode]").forEach((b) => b.classList.toggle("active", b.dataset.mode === mode));
+      }
+      document.querySelectorAll(".rail-btn[data-mode]").forEach((btn) => btn.addEventListener("click", () => showMode(btn.dataset.mode)));
+      document.getElementById("collapseBtn").addEventListener("click", () => {
+        app.classList.add("collapsed");
+        document.querySelectorAll(".rail-btn[data-mode]").forEach((b) => b.classList.remove("active"));
+      });
+      handle.addEventListener("click", () => showMode(document.querySelector(".panel.active")?.dataset.panel || "collab"));
+      document.getElementById("voiceBtn").addEventListener("click", (e) => e.currentTarget.classList.toggle("recording"));
+      document.querySelectorAll(".task").forEach((t) => t.addEventListener("click", (e) => {
+        if (e.target.closest(".task-act") || e.target.closest(".retry-btn")) return;
+        document.querySelectorAll(".task").forEach((x) => x.classList.remove("selected"));
+        t.classList.add("selected");
+      }));
+      const head = document.getElementById("drawerHead");
+      let dragging = false;
+      head.addEventListener("pointerdown", (e) => { dragging = true; head.classList.add("dragging"); head.setPointerCapture(e.pointerId); });
+      head.addEventListener("pointermove", (e) => {
+        if (!dragging) return;
+        const left = e.clientX < window.innerWidth / 2;
+        app.classList.toggle("dock-left", left);
+        app.classList.toggle("dock-right", !left);
+      });
+      head.addEventListener("pointerup", (e) => { dragging = false; head.classList.remove("dragging"); head.releasePointerCapture(e.pointerId); });
+      showMode("collab");
+    </script>
+  </body>
+</html>
